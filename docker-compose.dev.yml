@@ -25,7 +25,31 @@ services:
       - db
     env_file:
       - ./envs/app.env
+    environment:
+      # used only by `manage.py import_staged_mosques` (reads/updates staging; never written by discovery to main)
+      STAGING_DATABASE_URL: postgresql://staging:${STAGING_DB_PASSWORD:-staging}@staging_db:5432/staging
+
+  # --- mosque discovery (separate DB; never touches the main DB) ---
+  staging_db:
+    image: postgis/postgis:latest
+    environment:
+      POSTGRES_USER: staging
+      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:-staging}
+      POSTGRES_DB: staging
+    volumes:
+      - staging_data:/var/lib/postgresql/data
+
+  discovery:
+    build: ./mosque_discovery
+    depends_on:
+      - staging_db
+    environment:
+      STAGING_DATABASE_URL: postgresql://staging:${STAGING_DB_PASSWORD:-staging}@staging_db:5432/staging
+      GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
+      CRAWL_INTERVAL_HOURS: ${CRAWL_INTERVAL_HOURS:-168}
+    restart: unless-stopped
 
 volumes:
+  staging_data:
   postgres_data_dev:
   static_volume:
