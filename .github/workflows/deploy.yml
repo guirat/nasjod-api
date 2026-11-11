@@ -23,8 +23,6 @@ env:
 
 jobs:
   image:
-    # Skip the automated version-bump commit (see ci-cd.yml) to avoid a double deploy.
-    if: github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'Update version.txt')
     runs-on: ubuntu-latest
     permissions:
       contents: read
