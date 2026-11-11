@@ -11,7 +11,7 @@
 | Repo secret | `COOLIFY_TOKEN` |
 | Environment `staging` secret | `COOLIFY_WEBHOOK` |
 | Environment `production` secret | `COOLIFY_WEBHOOK` (+ required reviewer = owner) |
-| Obsolete after this change (delete): `GHCR_PAT`, `GIT_USER_EMAIL`, `GIT_USER_NAME` |
+| Obsolete after this change (delete) | `GHCR_PAT`, `GIT_USER_EMAIL`, `GIT_USER_NAME` |
 | To delete after merge | `VPS_SSH_PRIVATE_KEY`, `VPS_SSH_HOST`, `VPS_SSH_USER` |
 
 `COOLIFY_WEBHOOK` is the full Coolify deploy URL for that resource. Push to GHCR uses `GITHUB_TOKEN`.
