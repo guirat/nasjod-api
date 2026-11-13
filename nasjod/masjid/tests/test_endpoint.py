@@ -61,10 +61,10 @@ def test_partial_update_masjid_address(api_client, manager_user, masjid):
     address = masjid.address
     assert address.street == "Rue de Sfax"
     assert address.route_km_marker == 5.5
-    assert address.city == "Sfax"
-    assert address.state == "Sfax Governorate"
+    assert address.city == "sfax"
+    assert address.state == "sfax governorate"
     assert address.zip_code == "3000"
-    assert address.country == "Tunisia"
+    assert address.country == "tunisia"
     assert address.coordinates.equals(GEOSGeometry("POINT (10.760028 34.745000)"))
 
 @pytest.mark.django_db
