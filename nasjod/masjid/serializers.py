@@ -105,7 +105,9 @@ class MasjidSerializer(serializers.ModelSerializer):
             # If not found, create a new address
             address = Address.objects.create(**address_data)
 
-        masjid = Masjid.objects.create(address=address, is_active=False, **validated_data)
+        request = self.context.get('request')
+        is_active = request and request.user and request.user.is_authenticated
+        masjid = Masjid.objects.create(address=address, is_active=is_active, **validated_data)
         
         # Create iqamas directly
         for iqama_data in iqamas_data:
