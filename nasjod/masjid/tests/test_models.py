@@ -137,8 +137,8 @@ def test_eid_prayer_time_model(eid_prayer_time):
 def test_eid_prayer_time_model_unique_constraint(masjid, eid_prayer_time):
     with pytest.raises(ValidationError):
         duplicate_eid_prayer_time = EidPrayerTime(
-            masjid=masjid,
             date=eid_prayer_time.date,
             eid_time=eid_prayer_time.eid_time
         )
         duplicate_eid_prayer_time.full_clean()
+        duplicate_eid_prayer_time.save()

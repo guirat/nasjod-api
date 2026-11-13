@@ -12,10 +12,12 @@ class PrayerTimeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return PrayerTime.objects.all()
-    
+
     def get_permissions(self):
-        if self.action in ('create', 'destroy', 'update', 'partial_update'):
+        if self.action in ('destroy',):
             self.permission_classes = [IsAuthenticated, IsAdminUser]
+        elif self.action in ('create', 'update', 'partial_update'):
+            self.permission_classes = [IsAuthenticated, IsAdminOrManagerOrAssistant]
         else:
             self.permission_classes = []
         return super().get_permissions()
@@ -27,8 +29,8 @@ class JumuahPrayerTimeViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ('destroy',):
             self.permission_classes = [IsAuthenticated, IsAdminUser]
-        elif self.action in ('update', 'partial_update'):
-            self.permission_classes = [IsAuthenticated, IsAdminUser]
+        elif self.action in ('create', 'update', 'partial_update'):
+            self.permission_classes = [IsAuthenticated, IsAdminOrManagerOrAssistant]
         else:
             self.permission_classes = []
         return super().get_permissions()
@@ -40,8 +42,8 @@ class EidPrayerTimeViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ('destroy',):
             self.permission_classes = [IsAuthenticated, IsAdminUser]
-        elif self.action in ('update', 'partial_update'):
-            self.permission_classes = [IsAuthenticated, IsAdminUser]
+        elif self.action in ('create', 'update', 'partial_update'):
+            self.permission_classes = [IsAuthenticated, IsAdminOrManagerOrAssistant]
         else:
             self.permission_classes = []
         return super().get_permissions()

@@ -250,41 +250,29 @@ def test_create_prayer_time(api_client, admin_user, masjid):
         'asr': '15:30',
         'maghrib': '18:00',
         'isha': '19:30',
-        'fajr_iqama': 20,
-        'dhuhr_iqama': 10,
-        'asr_iqama': 15,
-        'maghrib_iqama': 5,
-        'isha_iqama': 25,
         'masjids': [str(masjid.uuid)]
     }
     response = api_client.post(url, data, format='json')
     assert response.status_code == status.HTTP_201_CREATED
-    created_prayer_time = PrayerTime.objects.get(masjids=masjid, date='2024-05-28')
+    created_prayer_time = PrayerTime.objects.filter(masjids=masjid, date='2024-05-28').get()
     assert created_prayer_time.fajr == datetime.time(5, 0)
     assert created_prayer_time.sunrise == datetime.time(6, 30)
     assert created_prayer_time.dhuhr == datetime.time(12, 0)
     assert created_prayer_time.asr == datetime.time(15, 30)
     assert created_prayer_time.maghrib == datetime.time(18, 0)
     assert created_prayer_time.isha == datetime.time(19, 30)
-    assert created_prayer_time.fajr_iqama == 20
-    assert created_prayer_time.dhuhr_iqama == 10
-    assert created_prayer_time.asr_iqama == 15
-    assert created_prayer_time.maghrib_iqama == 5
-    assert created_prayer_time.isha_iqama == 25
 
 @pytest.mark.django_db
 def test_update_prayer_time(api_client, admin_user, prayer_time):
     api_client.force_authenticate(user=admin_user)
     url = reverse('prayer-time-detail', kwargs={'pk': prayer_time.pk})
     data = {
-        'fajr': '05:15',
-        'fajr_iqama': 25
+        'fajr': '05:15'
     }
     response = api_client.patch(url, data, format='json')
     assert response.status_code == status.HTTP_200_OK
     prayer_time.refresh_from_db()
     assert prayer_time.fajr == datetime.time(5, 15)
-    assert prayer_time.fajr_iqama == 25
 
 @pytest.mark.django_db
 def test_delete_prayer_time(api_client, admin_user, prayer_time):
@@ -339,7 +327,7 @@ def test_create_eid_prayer_time(api_client, admin_user, masjid):
     }
     response = api_client.post(url, data, format='json')
     assert response.status_code == status.HTTP_201_CREATED
-    created_eid_prayer_time = EidPrayerTime.objects.get(masjids=masjid, date='2024-05-28')
+    created_eid_prayer_time = EidPrayerTime.objects.filter(masjids=masjid, date='2024-05-28').get()
     assert created_eid_prayer_time.eid_time == datetime.time(8, 0)
 
 @pytest.mark.django_db
