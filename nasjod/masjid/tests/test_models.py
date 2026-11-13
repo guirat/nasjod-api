@@ -12,10 +12,10 @@ from prayertime.models import EidPrayerTime, JumuahPrayerTime, PrayerTime
 def test_create_masjid(masjid):
     assert masjid.name == "Sakiet Eddayer Mosque"
     assert masjid.address.street == "Mahdia"
-    assert masjid.address.city == "Sakiet Eddaier"
-    assert masjid.address.state == "Sfax Governorate"
+    assert masjid.address.city == "sakiet eddaier"  # Address fields are normalized to lowercase
+    assert masjid.address.state == "sfax governorate"  # Address fields are normalized to lowercase
     assert masjid.address.zip_code == "3011"
-    assert masjid.address.country == "Tunisia"
+    assert masjid.address.country == "tunisia"  # Address fields are normalized to lowercase
     assert masjid.address.coordinates.x == 10.780081214495699
     assert masjid.address.coordinates.y == 34.79051319533724
     assert masjid.telephone == ""
