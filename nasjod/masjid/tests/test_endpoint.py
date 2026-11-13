@@ -5,7 +5,8 @@ from django.urls import reverse
 from rest_framework import status
 from django.contrib.gis.geos import GEOSGeometry
 
-from ..models import Masjid, PrayerTime, JumuahPrayerTime, EidPrayerTime
+from ..models import Masjid
+from prayertime.models import EidPrayerTime, JumuahPrayerTime, PrayerTime
 from core.models import Address
 
 

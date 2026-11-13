@@ -5,7 +5,8 @@ from hijri_converter import Gregorian
 from datetime import date, time
 from django.core.exceptions import ValidationError
 from core.models import Address
-from ..models import EidPrayerTime, JumuahPrayerTime, Masjid, PrayerTime
+from ..models import Masjid
+from prayertime.models import EidPrayerTime, JumuahPrayerTime, PrayerTime
 
 @pytest.mark.django_db
 def test_create_masjid(masjid):

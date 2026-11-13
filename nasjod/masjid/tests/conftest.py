@@ -6,7 +6,8 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from core.models import Address
-from ..models import EidPrayerTime, JumuahPrayerTime, Masjid, PrayerTime
+from ..models import Masjid
+from prayertime.models import EidPrayerTime, JumuahPrayerTime, PrayerTime
 
 User = get_user_model()
 
