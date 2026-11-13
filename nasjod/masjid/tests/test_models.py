@@ -142,3 +142,4 @@ def test_eid_prayer_time_model_unique_constraint(masjid, eid_prayer_time):
         )
         duplicate_eid_prayer_time.full_clean()
         duplicate_eid_prayer_time.save()
+        duplicate_eid_prayer_time.masjids.add(masjid)

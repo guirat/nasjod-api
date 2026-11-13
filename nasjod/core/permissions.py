@@ -100,6 +100,22 @@ class IsMousalliOfMasjid(BasePermission):
         except Masjid.DoesNotExist:
             return False
 
+class IsAdminOrManagerOrAssistantOfPrayerTime(BasePermission):
+    """Permission for prayer time objects - allows admin, managers, and assistants of associated masjids"""
+    def has_object_permission(self, request, view, obj):
+        if request.user.is_staff:
+            return True
+        # For many-to-many relationships, check all associated masjids
+        if hasattr(obj, 'masjids'):
+            for masjid in obj.masjids.all():
+                if masjid.managers.filter(id=request.user.id).exists() or masjid.assistants.filter(id=request.user.id).exists():
+                    return True
+        # For single masjid relationship
+        elif hasattr(obj, 'masjid'):
+            masjid = obj.masjid
+            return masjid.managers.filter(id=request.user.id).exists() or masjid.assistants.filter(id=request.user.id).exists()
+        return False
+
 class FrontendAppPermission(BasePermission):
     """
     Custom permission to check if the request is authenticated using an app token.
