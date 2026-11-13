@@ -38,8 +38,6 @@ class BasePrayerTimeSerializer(serializers.ModelSerializer):
                 # If not found, create a new address
                 address = Address.objects.create(**address_data)
             validated_data['location'] = address
-        else:
-            validated_data['location'] = None
 
         # Convert list of UUIDs to Masjid instances
         masjids = validated_data.pop('masjids', [])

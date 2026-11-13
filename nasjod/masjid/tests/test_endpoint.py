@@ -113,36 +113,53 @@ def test_masjid_permissions(api_client, manager_user, assistant_user, mousalli_u
 def test_masjid_creation_permissions(api_client, masjid_payload, admin_user, manager_user, assistant_user, mousalli_user, imam_user):
     url = reverse('masjid-list')
     Masjid.objects.all().delete()
+
     # Admin
     api_client.force_authenticate(user=admin_user)
     response = api_client.post(url, masjid_payload, format='json')
     assert response.status_code == status.HTTP_201_CREATED
-    Masjid.objects.get(uuid=response.data['uuid']).delete()
+    admin_masjid = Masjid.objects.get(uuid=response.data['uuid'])
+    assert admin_masjid.is_active is True
+    admin_masjid.delete()
 
     # Manager
     api_client.force_authenticate(user=manager_user)
     response = api_client.post(url, masjid_payload, format='json')
-    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.status_code == status.HTTP_201_CREATED
+    manager_masjid = Masjid.objects.get(uuid=response.data['uuid'])
+    assert manager_masjid.is_active is True
+    manager_masjid.delete()
 
     # Assistant
     api_client.force_authenticate(user=assistant_user)
     response = api_client.post(url, masjid_payload, format='json')
-    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.status_code == status.HTTP_201_CREATED
+    assistant_masjid = Masjid.objects.get(uuid=response.data['uuid'])
+    assert assistant_masjid.is_active is True
+    assistant_masjid.delete()
 
     # Mousalli
     api_client.force_authenticate(user=mousalli_user)
     response = api_client.post(url, masjid_payload, format='json')
-    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.status_code == status.HTTP_201_CREATED
+    mousalli_masjid = Masjid.objects.get(uuid=response.data['uuid'])
+    assert mousalli_masjid.is_active is True
+    mousalli_masjid.delete()
 
     # Imam
     api_client.force_authenticate(user=imam_user)
     response = api_client.post(url, masjid_payload, format='json')
-    assert response.status_code == status.HTTP_403_FORBIDDEN
+    assert response.status_code == status.HTTP_201_CREATED
+    imam_masjid = Masjid.objects.get(uuid=response.data['uuid'])
+    assert imam_masjid.is_active is True
+    imam_masjid.delete()
 
     # Anonymous
     api_client.force_authenticate(user=None)
     response = api_client.post(url, masjid_payload, format='json')
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert response.status_code == status.HTTP_201_CREATED
+    anon_masjid = Masjid.objects.get(uuid=response.data['uuid'])
+    assert anon_masjid.is_active is False
 
 @pytest.mark.django_db
 def test_masjid_deletion_permissions(api_client, admin_user, manager_user, assistant_user, mousalli_user, imam_user, masjid):
@@ -352,18 +369,23 @@ def test_delete_eid_prayer_time(api_client, admin_user, eid_prayer_time):
 
 # Permission Tests
 @pytest.mark.django_db
-def test_prayer_time_permissions(api_client, manager_user, assistant_user, mousalli_user, imam_user, prayer_time):
+def test_prayer_time_permissions(api_client, admin_user, manager_user, assistant_user, mousalli_user, imam_user, prayer_time):
     url = reverse('prayer-time-detail', kwargs={'pk': prayer_time.pk})
 
-    # Manager
-    api_client.force_authenticate(user=manager_user)
+    # Admin
+    api_client.force_authenticate(user=admin_user)
     response = api_client.patch(url, {'fajr': '05:15'}, format='json')
     assert response.status_code == status.HTTP_200_OK
 
+    # Manager
+    api_client.force_authenticate(user=manager_user)
+    response = api_client.patch(url, {'fajr': '05:30'}, format='json')
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
     # Assistant
     api_client.force_authenticate(user=assistant_user)
-    response = api_client.patch(url, {'fajr': '05:30'}, format='json')
-    assert response.status_code == status.HTTP_200_OK
+    response = api_client.patch(url, {'fajr': '05:45'}, format='json')
+    assert response.status_code == status.HTTP_403_FORBIDDEN
 
     # Mousalli
     api_client.force_authenticate(user=mousalli_user)
@@ -375,19 +397,29 @@ def test_prayer_time_permissions(api_client, manager_user, assistant_user, mousa
     response = api_client.patch(url, {'fajr': '06:00'}, format='json')
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    # Anonymous
+    api_client.force_authenticate(user=None)
+    response = api_client.patch(url, {'fajr': '06:15'}, format='json')
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
 @pytest.mark.django_db
-def test_jumuah_prayer_time_permissions(api_client, manager_user, assistant_user, mousalli_user, imam_user, jumuah_prayer_time):
+def test_jumuah_prayer_time_permissions(api_client, admin_user, manager_user, assistant_user, mousalli_user, imam_user, jumuah_prayer_time):
     url = reverse('jumuah-prayer-time-detail', kwargs={'pk': jumuah_prayer_time.pk})
 
-    # Manager
-    api_client.force_authenticate(user=manager_user)
+    # Admin
+    api_client.force_authenticate(user=admin_user)
     response = api_client.patch(url, {'jumuah_time': '13:15'}, format='json')
     assert response.status_code == status.HTTP_200_OK
 
+    # Manager
+    api_client.force_authenticate(user=manager_user)
+    response = api_client.patch(url, {'jumuah_time': '13:30'}, format='json')
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
     # Assistant
     api_client.force_authenticate(user=assistant_user)
-    response = api_client.patch(url, {'jumuah_time': '13:30'}, format='json')
-    assert response.status_code == status.HTTP_200_OK
+    response = api_client.patch(url, {'jumuah_time': '13:45'}, format='json')
+    assert response.status_code == status.HTTP_403_FORBIDDEN
 
     # Mousalli
     api_client.force_authenticate(user=mousalli_user)
@@ -399,19 +431,29 @@ def test_jumuah_prayer_time_permissions(api_client, manager_user, assistant_user
     response = api_client.patch(url, {'jumuah_time': '14:00'}, format='json')
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    # Anonymous
+    api_client.force_authenticate(user=None)
+    response = api_client.patch(url, {'jumuah_time': '14:15'}, format='json')
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
 @pytest.mark.django_db
-def test_eid_prayer_time_permissions(api_client, manager_user, assistant_user, mousalli_user, imam_user, eid_prayer_time):
+def test_eid_prayer_time_permissions(api_client, admin_user, manager_user, assistant_user, mousalli_user, imam_user, eid_prayer_time):
     url = reverse('eid-prayer-time-detail', kwargs={'pk': eid_prayer_time.pk})
 
-    # Manager
-    api_client.force_authenticate(user=manager_user)
+    # Admin
+    api_client.force_authenticate(user=admin_user)
     response = api_client.patch(url, {'eid_time': '08:30'}, format='json')
     assert response.status_code == status.HTTP_200_OK
 
+    # Manager
+    api_client.force_authenticate(user=manager_user)
+    response = api_client.patch(url, {'eid_time': '09:00'}, format='json')
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
     # Assistant
     api_client.force_authenticate(user=assistant_user)
-    response = api_client.patch(url, {'eid_time': '09:00'}, format='json')
-    assert response.status_code == status.HTTP_200_OK
+    response = api_client.patch(url, {'eid_time': '09:30'}, format='json')
+    assert response.status_code == status.HTTP_403_FORBIDDEN
 
     # Mousalli
     api_client.force_authenticate(user=mousalli_user)
@@ -422,4 +464,9 @@ def test_eid_prayer_time_permissions(api_client, manager_user, assistant_user, m
     api_client.force_authenticate(user=imam_user)
     response = api_client.patch(url, {'eid_time': '10:00'}, format='json')
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    # Anonymous
+    api_client.force_authenticate(user=None)
+    response = api_client.patch(url, {'eid_time': '10:30'}, format='json')
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
 

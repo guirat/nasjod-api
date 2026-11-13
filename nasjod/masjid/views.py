@@ -28,8 +28,6 @@ class MasjidViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ('destroy',):
             self.permission_classes = [IsAuthenticated, IsAdminUser]
-        elif self.action in ('create',):
-            self.permission_classes = [IsAuthenticated, IsAdminUser]
         elif self.action in ('update', 'partial_update'):
             self.permission_classes = [IsAuthenticated, IsManagerOfMasjid]
         else:

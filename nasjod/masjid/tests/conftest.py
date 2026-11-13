@@ -4,12 +4,20 @@ from core.tests.fixtures import *
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 
 from core.models import Address
 from ..models import Masjid
 from prayertime.models import EidPrayerTime, JumuahPrayerTime, PrayerTime
 
 User = get_user_model()
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    """Clear cache before each test to prevent throttle counter leakage"""
+    cache.clear()
+    yield
+    cache.clear()
 
 # Override or add additional fixtures specific to app2
 @pytest.fixture
