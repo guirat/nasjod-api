@@ -3,7 +3,13 @@ from rest_framework.throttling import AnonRateThrottle
 
 class CreateMasjidAnonThrottle(AnonRateThrottle):
     scope = 'anon_create_masjid'
+    THROTTLE_RATES = {
+        'anon_create_masjid': '5/min',
+    }
 
 class CreateSuggestionMasjidModificationAnonThrottle(AnonRateThrottle):
     scope = 'anon_create_suggestion_masjid_modification'
+    THROTTLE_RATES = {
+        'anon_create_suggestion_masjid_modification': '5/min',
+    }
 
