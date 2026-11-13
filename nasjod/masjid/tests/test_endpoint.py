@@ -241,7 +241,7 @@ def test_masjid_list_permissions(api_client, manager_user, assistant_user, mousa
 @pytest.mark.django_db
 def test_create_prayer_time(api_client, admin_user, masjid):
     api_client.force_authenticate(user=admin_user)
-    url = reverse('prayer-time-list', kwargs={'masjid_uuid': masjid.uuid})
+    url = reverse('prayer-time-list')
     data = {
         'date': '2024-05-28',
         'fajr': '05:00',
@@ -254,11 +254,12 @@ def test_create_prayer_time(api_client, admin_user, masjid):
         'dhuhr_iqama': 10,
         'asr_iqama': 15,
         'maghrib_iqama': 5,
-        'isha_iqama': 25
+        'isha_iqama': 25,
+        'masjids': [str(masjid.uuid)]
     }
     response = api_client.post(url, data, format='json')
     assert response.status_code == status.HTTP_201_CREATED
-    created_prayer_time = PrayerTime.objects.get(masjid=masjid, date='2024-05-28')
+    created_prayer_time = PrayerTime.objects.get(masjids=masjid, date='2024-05-28')
     assert created_prayer_time.fajr == datetime.time(5, 0)
     assert created_prayer_time.sunrise == datetime.time(6, 30)
     assert created_prayer_time.dhuhr == datetime.time(12, 0)
@@ -274,7 +275,7 @@ def test_create_prayer_time(api_client, admin_user, masjid):
 @pytest.mark.django_db
 def test_update_prayer_time(api_client, admin_user, prayer_time):
     api_client.force_authenticate(user=admin_user)
-    url = reverse('prayer-time-detail', kwargs={'masjid_uuid': prayer_time.masjid.uuid, 'pk': prayer_time.pk})
+    url = reverse('prayer-time-detail', kwargs={'pk': prayer_time.pk})
     data = {
         'fajr': '05:15',
         'fajr_iqama': 25
@@ -288,7 +289,7 @@ def test_update_prayer_time(api_client, admin_user, prayer_time):
 @pytest.mark.django_db
 def test_delete_prayer_time(api_client, admin_user, prayer_time):
     api_client.force_authenticate(user=admin_user)
-    url = reverse('prayer-time-detail', kwargs={'masjid_uuid': prayer_time.masjid.uuid, 'pk': prayer_time.pk})
+    url = reverse('prayer-time-detail', kwargs={'pk': prayer_time.pk})
     response = api_client.delete(url)
     assert response.status_code == status.HTTP_204_NO_CONTENT
     assert PrayerTime.objects.count() == 0
@@ -296,10 +297,11 @@ def test_delete_prayer_time(api_client, admin_user, prayer_time):
 @pytest.mark.django_db
 def test_create_jumuah_prayer_time(api_client, admin_user, masjid):
     api_client.force_authenticate(user=admin_user)
-    url = reverse('jumuah-prayer-time-list', kwargs={'masjid_uuid': masjid.uuid})
+    url = reverse('jumuah-prayer-time-list')
     data = {
         'date': '2024-05-31',  # Ensure this is a Friday
-        'jumuah_time': '13:00'
+        'jumuah_time': '13:00',
+        'masjid': str(masjid.uuid)
     }
     response = api_client.post(url, data, format='json')
     assert response.status_code == status.HTTP_201_CREATED
@@ -309,7 +311,7 @@ def test_create_jumuah_prayer_time(api_client, admin_user, masjid):
 @pytest.mark.django_db
 def test_update_jumuah_prayer_time(api_client, admin_user, jumuah_prayer_time):
     api_client.force_authenticate(user=admin_user)
-    url = reverse('jumuah-prayer-time-detail', kwargs={'masjid_uuid': jumuah_prayer_time.masjid.uuid, 'pk': jumuah_prayer_time.pk})
+    url = reverse('jumuah-prayer-time-detail', kwargs={'pk': jumuah_prayer_time.pk})
     data = {
         'jumuah_time': '13:15'
     }
@@ -321,7 +323,7 @@ def test_update_jumuah_prayer_time(api_client, admin_user, jumuah_prayer_time):
 @pytest.mark.django_db
 def test_delete_jumuah_prayer_time(api_client, admin_user, jumuah_prayer_time):
     api_client.force_authenticate(user=admin_user)
-    url = reverse('jumuah-prayer-time-detail', kwargs={'masjid_uuid': jumuah_prayer_time.masjid.uuid, 'pk': jumuah_prayer_time.pk})
+    url = reverse('jumuah-prayer-time-detail', kwargs={'pk': jumuah_prayer_time.pk})
     response = api_client.delete(url)
     assert response.status_code == status.HTTP_204_NO_CONTENT
     assert JumuahPrayerTime.objects.count() == 0
@@ -329,20 +331,21 @@ def test_delete_jumuah_prayer_time(api_client, admin_user, jumuah_prayer_time):
 @pytest.mark.django_db
 def test_create_eid_prayer_time(api_client, admin_user, masjid):
     api_client.force_authenticate(user=admin_user)
-    url = reverse('eid-prayer-time-list', kwargs={'masjid_uuid': masjid.uuid})
+    url = reverse('eid-prayer-time-list')
     data = {
         'date': '2024-05-28',
-        'eid_time': '08:00'
+        'eid_time': '08:00',
+        'masjids': [str(masjid.uuid)]
     }
     response = api_client.post(url, data, format='json')
     assert response.status_code == status.HTTP_201_CREATED
-    created_eid_prayer_time = EidPrayerTime.objects.get(masjid=masjid, date='2024-05-28')
+    created_eid_prayer_time = EidPrayerTime.objects.get(masjids=masjid, date='2024-05-28')
     assert created_eid_prayer_time.eid_time == datetime.time(8, 0)
 
 @pytest.mark.django_db
 def test_update_eid_prayer_time(api_client, admin_user, eid_prayer_time):
     api_client.force_authenticate(user=admin_user)
-    url = reverse('eid-prayer-time-detail', kwargs={'masjid_uuid': eid_prayer_time.masjid.uuid, 'pk': eid_prayer_time.pk})
+    url = reverse('eid-prayer-time-detail', kwargs={'pk': eid_prayer_time.pk})
     data = {
         'eid_time': '08:30'
     }
@@ -354,7 +357,7 @@ def test_update_eid_prayer_time(api_client, admin_user, eid_prayer_time):
 @pytest.mark.django_db
 def test_delete_eid_prayer_time(api_client, admin_user, eid_prayer_time):
     api_client.force_authenticate(user=admin_user)
-    url = reverse('eid-prayer-time-detail', kwargs={'masjid_uuid': eid_prayer_time.masjid.uuid, 'pk': eid_prayer_time.pk})
+    url = reverse('eid-prayer-time-detail', kwargs={'pk': eid_prayer_time.pk})
     response = api_client.delete(url)
     assert response.status_code == status.HTTP_204_NO_CONTENT
     assert EidPrayerTime.objects.count() == 0
@@ -362,7 +365,7 @@ def test_delete_eid_prayer_time(api_client, admin_user, eid_prayer_time):
 # Permission Tests
 @pytest.mark.django_db
 def test_prayer_time_permissions(api_client, manager_user, assistant_user, mousalli_user, imam_user, prayer_time):
-    url = reverse('prayer-time-detail', kwargs={'masjid_uuid': prayer_time.masjid.uuid, 'pk': prayer_time.pk})
+    url = reverse('prayer-time-detail', kwargs={'pk': prayer_time.pk})
 
     # Manager
     api_client.force_authenticate(user=manager_user)
@@ -386,7 +389,7 @@ def test_prayer_time_permissions(api_client, manager_user, assistant_user, mousa
 
 @pytest.mark.django_db
 def test_jumuah_prayer_time_permissions(api_client, manager_user, assistant_user, mousalli_user, imam_user, jumuah_prayer_time):
-    url = reverse('jumuah-prayer-time-detail', kwargs={'masjid_uuid': jumuah_prayer_time.masjid.uuid, 'pk': jumuah_prayer_time.pk})
+    url = reverse('jumuah-prayer-time-detail', kwargs={'pk': jumuah_prayer_time.pk})
 
     # Manager
     api_client.force_authenticate(user=manager_user)
@@ -410,7 +413,7 @@ def test_jumuah_prayer_time_permissions(api_client, manager_user, assistant_user
 
 @pytest.mark.django_db
 def test_eid_prayer_time_permissions(api_client, manager_user, assistant_user, mousalli_user, imam_user, eid_prayer_time):
-    url = reverse('eid-prayer-time-detail', kwargs={'masjid_uuid': eid_prayer_time.masjid.uuid, 'pk': eid_prayer_time.pk})
+    url = reverse('eid-prayer-time-detail', kwargs={'pk': eid_prayer_time.pk})
 
     # Manager
     api_client.force_authenticate(user=manager_user)
