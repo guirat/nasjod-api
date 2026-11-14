@@ -1,7 +1,6 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 
-from core.permissions import IsAdminOrManagerOrAssistant
 from .models import PrayerTime, JumuahPrayerTime, EidPrayerTime, IqamaTime
 from prayertime.serializers import (EidPrayerTimeSerializer, IqamaTimeSerializer, JumuahPrayerTimeSerializer,
                                     PrayerTimeSerializer)
@@ -12,7 +11,7 @@ class PrayerTimeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return PrayerTime.objects.all()
-    
+
     def get_permissions(self):
         if self.action in ('create', 'destroy', 'update', 'partial_update'):
             self.permission_classes = [IsAuthenticated, IsAdminUser]

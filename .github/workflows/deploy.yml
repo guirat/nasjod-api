@@ -1,0 +1,133 @@
+name: Deploy
+
+# staging branch -> Environment "staging"; main branch -> Environment "production"
+# (required reviewer gate configured by the owner on the GitHub Environment).
+# workflow_dispatch = rollback: re-tag an existing SHA image as the env tag and redeploy.
+on:
+  push:
+    branches:
+      - staging
+      - main
+  workflow_dispatch:
+    inputs:
+      rollback_sha:
+        description: "Full 40-char commit SHA of an already-built image to redeploy (rollback). Run from the branch of the target environment."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      env_tag: ${{ steps.vars.outputs.env_tag }}
+      sha: ${{ steps.vars.outputs.sha }}
+    steps:
+      - name: Compute tags
+        id: vars
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          ROLLBACK_SHA: ${{ inputs.rollback_sha }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          case "$REF_NAME" in
+            staging) env_tag=staging ;;
+            main) env_tag=prod ;;
+            *) echo "Refusing to deploy from branch $REF_NAME"; exit 1 ;;
+          esac
+          sha="$COMMIT_SHA"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if ! printf '%s' "$ROLLBACK_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "rollback_sha must be a full 40-char lowercase hex SHA"; exit 1
+            fi
+            sha="$ROLLBACK_SHA"
+          fi
+          echo "env_tag=$env_tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check out code
+        if: github.event_name == 'push'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        if: github.event_name == 'push'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build and push image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.vars.outputs.env_tag }}
+            ${{ env.IMAGE }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Rollback - re-tag existing SHA image as environment tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SHA: ${{ steps.vars.outputs.sha }}
+          ENV_TAG: ${{ steps.vars.outputs.env_tag }}
+        run: |
+          docker buildx imagetools create \
+            --tag "$IMAGE:$ENV_TAG" \
+            "$IMAGE:$SHA"
+
+  deploy:
+    needs: image
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    concurrency:
+      group: deploy-${{ github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Trigger Coolify redeploy
+        env:
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
+        run: |
+          if [ -z "$COOLIFY_TOKEN" ] || [ -z "$COOLIFY_WEBHOOK" ]; then
+            echo "COOLIFY_TOKEN or COOLIFY_WEBHOOK is not set for this environment"; exit 1
+          fi
+          # --fail: any non-2xx response fails the job. Response body is not echoed.
+          curl --fail --silent --show-error \
+            --connect-timeout 15 --max-time 60 --retry 2 --retry-connrefused \
+            --output /dev/null \
+            --header "Authorization: Bearer $COOLIFY_TOKEN" \
+            "$COOLIFY_WEBHOOK"
+          echo "Coolify redeploy accepted"
+
+      - name: Summary
+        env:
+          ENV_TAG: ${{ needs.image.outputs.env_tag }}
+          SHA: ${{ needs.image.outputs.sha }}
+        run: |
+          {
+            echo "### Deploy triggered"
+            echo "- Image tag: \`$ENV_TAG\`"
+            echo "- Commit SHA: \`$SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"

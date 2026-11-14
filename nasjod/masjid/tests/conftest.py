@@ -4,11 +4,20 @@ from core.tests.fixtures import *
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 
 from core.models import Address
-from ..models import EidPrayerTime, JumuahPrayerTime, Masjid, PrayerTime
+from ..models import Masjid
+from prayertime.models import EidPrayerTime, JumuahPrayerTime, PrayerTime
 
 User = get_user_model()
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    """Clear cache before each test to prevent throttle counter leakage"""
+    cache.clear()
+    yield
+    cache.clear()
 
 # Override or add additional fixtures specific to app2
 @pytest.fixture
@@ -78,8 +87,7 @@ def masjid(address, manager_user, assistant_user, mousalli_user, imam_user):
 
 @pytest.fixture
 def prayer_time(masjid):
-    return PrayerTime.objects.create(
-        masjid=masjid,
+    prayer_time = PrayerTime.objects.create(
         date=datetime.today().date(),
         fajr="05:00",
         sunrise="06:30",
@@ -88,6 +96,8 @@ def prayer_time(masjid):
         maghrib="18:00",
         isha="19:30"
     )
+    prayer_time.masjids.add(masjid)
+    return prayer_time
 
 @pytest.fixture
 def jumuah_prayer_time(masjid):
@@ -102,8 +112,9 @@ def jumuah_prayer_time(masjid):
 
 @pytest.fixture
 def eid_prayer_time(masjid):
-    return EidPrayerTime.objects.create(
-        masjid=masjid,
+    eid_prayer_time = EidPrayerTime.objects.create(
         date=datetime.today().date(),
         eid_time="08:00"
     )
+    eid_prayer_time.masjids.add(masjid)
+    return eid_prayer_time

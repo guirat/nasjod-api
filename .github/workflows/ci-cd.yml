@@ -1,81 +1,41 @@
-name: CI/CD Pipeline Nasjod
+# GUI-2: build/push/deploy lives in deploy.yml, checks in ci.yml.
+# This workflow only tags the merge commit and creates a GitHub Release.
+# It never pushes to a branch (no version.txt commit), so branch protection needs no bypass.
+name: Release (tag only)
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  # Uncomment and adjust the test-and-lint job if needed
-  # test-and-lint:
-  #   runs-on: ubuntu-latest
-  #   if: github.event_name == 'pull_request'
-
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v2
-
-  #     - name: Set up Python
-  #       uses: actions/setup-python@v2
-  #       with:
-  #         python-version: '3.12'
-
-  #     - name: Install dependencies
-  #       run: |
-  #         python -m pip install --upgrade pip
-  #         pip install -r requirements.txt
-  #         pip install pytest flake8
-
-  #     - name: Run flake8 linting
-  #       run: flake8 .
-
-  #     - name: Run pytest
-  #       run: pytest
-
   create-release:
     runs-on: ubuntu-latest
-    if: |
-      (github.event_name == 'push' || github.event_name == 'pull_request') &&
-      !startsWith(github.event.head_commit.message, 'Update version.txt')
-
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          fetch-depth: 0  # Fetch all history to get all tags
+          fetch-depth: 0  # Fetch all tags
           persist-credentials: false
 
       - name: Install semver
         run: pip install semver
 
-      - name: Configure Git user
-        run: |
-          git config --global user.email "${{ secrets.GIT_USER_EMAIL }}"
-          git config --global user.name "${{ secrets.GIT_USER_NAME }}"
-
-      - name: Set up authentication for pushing tags and commits
+      - name: Compute next version from latest tag
+        id: version
         env:
-          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          git remote set-url origin https://x-access-token:${GHCR_PAT}@github.com/${{ github.repository }}
-
-      - name: Set version, update version.txt, and create tag
-        id: create_release
-        run: |
-          # Get the current version from the latest tag
-          LAST_TAG=$(git tag --sort=-v:refname | head -n 1 || echo "v0.0.0")
-          CURRENT_VERSION=${LAST_TAG#v}  # Remove the 'v' prefix
-
+          LAST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          CURRENT_VERSION=${LAST_TAG#v}
+          CURRENT_VERSION=${CURRENT_VERSION:-0.0.0}
           echo "Current version: $CURRENT_VERSION"
 
-          # Determine versioning based on commit message patterns
-          COMMIT_MESSAGE=$(git log -1 --pretty=%B)
           if [[ "$COMMIT_MESSAGE" =~ feat! ]]; then
             VERSION_TYPE=major
           elif [[ "$COMMIT_MESSAGE" =~ feat ]]; then
@@ -83,85 +43,19 @@ jobs:
           else
             VERSION_TYPE=patch
           fi
-
           echo "Version bump type: $VERSION_TYPE"
 
-          # Increment the version number
-          NEW_VERSION=$(python3 -c "import semver; print(semver.VersionInfo.parse('$CURRENT_VERSION').bump_$VERSION_TYPE())")
-
+          NEW_VERSION=$(CURRENT_VERSION="$CURRENT_VERSION" VERSION_TYPE="$VERSION_TYPE" python3 -c "import os, semver; print(getattr(semver.VersionInfo.parse(os.environ['CURRENT_VERSION']), 'bump_' + os.environ['VERSION_TYPE'])())")
           echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
-          # Update version.txt with the new version
-          echo "$NEW_VERSION" > version.txt
-
-          # Commit the updated version.txt without [skip ci]
-          git add version.txt
-          git commit -m "Update version.txt to v$NEW_VERSION"
-
-          # Tag the new version
-          git tag -a "v$NEW_VERSION" -m "Release version v$NEW_VERSION"
-
-          # Push the commit and the new tag
-          git push origin main --follow-tags
-
-          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+      # Creates the tag on the merge commit via the API and the release in one step.
+      - name: Create tag and GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: "v${{ env.NEW_VERSION }}"
-          name: "v${{ env.NEW_VERSION }}"
-          body: "Automated release for version v${{ env.NEW_VERSION }}"
+          tag_name: "v${{ steps.version.outputs.new_version }}"
+          target_commitish: ${{ github.sha }}
+          name: "v${{ steps.version.outputs.new_version }}"
+          body: "Automated release for version v${{ steps.version.outputs.new_version }}"
         env:
-          GITHUB_TOKEN: ${{ secrets.GHCR_PAT }}
-
-  build-and-push:
-    runs-on: ubuntu-latest
-    needs: create-release
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to GitHub Container Registry
-        run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: Dockerfile
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/nasjod-api:latest
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Set up SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.VPS_SSH_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Login to GitHub Container Registry
-        run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
-
-      - name: Deploy to VPS
-        env:
-          SSH_USER: ${{ secrets.VPS_SSH_USER }}
-          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
-        run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_ed25519 $SSH_USER@$SSH_HOST << 'EOF'
-            cd /opt/projects/nasjod
-            docker compose pull app front
-            docker compose up -d app front
-          EOF
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

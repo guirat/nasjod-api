@@ -5,16 +5,17 @@ from hijri_converter import Gregorian
 from datetime import date, time
 from django.core.exceptions import ValidationError
 from core.models import Address
-from ..models import EidPrayerTime, JumuahPrayerTime, Masjid, PrayerTime
+from ..models import Masjid
+from prayertime.models import EidPrayerTime, JumuahPrayerTime, PrayerTime
 
 @pytest.mark.django_db
 def test_create_masjid(masjid):
     assert masjid.name == "Sakiet Eddayer Mosque"
     assert masjid.address.street == "Mahdia"
-    assert masjid.address.city == "Sakiet Eddaier"
-    assert masjid.address.state == "Sfax Governorate"
+    assert masjid.address.city == "sakiet eddaier"  # Address fields are normalized to lowercase
+    assert masjid.address.state == "sfax governorate"  # Address fields are normalized to lowercase
     assert masjid.address.zip_code == "3011"
-    assert masjid.address.country == "Tunisia"
+    assert masjid.address.country == "tunisia"  # Address fields are normalized to lowercase
     assert masjid.address.coordinates.x == 10.780081214495699
     assert masjid.address.coordinates.y == 34.79051319533724
     assert masjid.telephone == ""
@@ -136,7 +137,6 @@ def test_eid_prayer_time_model(eid_prayer_time):
 def test_eid_prayer_time_model_unique_constraint(masjid, eid_prayer_time):
     with pytest.raises(ValidationError):
         duplicate_eid_prayer_time = EidPrayerTime(
-            masjid=masjid,
             date=eid_prayer_time.date,
             eid_time=eid_prayer_time.eid_time
         )

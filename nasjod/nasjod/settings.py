@@ -220,11 +220,16 @@ if S3_STORAGE_BACKEND is True:
     # AWS_S3_REGION_NAME = os.environ.get("S3_STORAGE_BUCKET_REGION", "us-east-1")
     # AWS_QUERYSTRING_AUTH = False
 
+# Always define throttle rates for custom throttle classes in views
+DEFAULT_THROTTLE_RATES = {
+    'user': '10000/day',
+    'anon': '1000/day',
+    'anon_create_masjid': '5/min',
+    'anon_create_suggestion_masjid_modification': '5/min',
+}
+
 # If throttling is disabled, set an empty tuple for throttle classes
 DEFAULT_THROTTLE_CLASSES = ()
-DEFAULT_THROTTLE_RATES = {}
-
-
 
 # Fetch the value from the environment variable, default is False (disabled)
 THROTTLE_ENABLED = os.getenv('THROTTLE_ENABLED', 'False') == 'True'
@@ -234,12 +239,6 @@ if THROTTLE_ENABLED:
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle',
     )
-    DEFAULT_THROTTLE_RATES = {
-        'user': '10000/day',
-        'anon': '1000/day',
-        'anon_create_masjid': '5/min',
-        'anon_create_suggestion_masjid_modification': '5/min',
-    }
 
 REST_FRAMEWORK = {
     #SCHEMA_OPENAPI

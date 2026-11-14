@@ -90,7 +90,7 @@ class MasjidSerializer(serializers.ModelSerializer):
         today = date.today()
         start_of_week = today - timedelta(days=today.weekday())  # Start of the week (Monday)
         end_of_week = start_of_week + timedelta(days=6)  # End of the week (Sunday)
-        eid_prayer_times = EidPrayerTime.objects.filter(masjid__uuid=obj.uuid, date__range=[start_of_week, end_of_week])
+        eid_prayer_times = EidPrayerTime.objects.filter(masjids=obj, date__range=[start_of_week, end_of_week])
         return EidPrayerTimeSerializer(eid_prayer_times, many=True).data
 
     def create(self, validated_data):
@@ -105,7 +105,9 @@ class MasjidSerializer(serializers.ModelSerializer):
             # If not found, create a new address
             address = Address.objects.create(**address_data)
 
-        masjid = Masjid.objects.create(address=address, is_active=False, **validated_data)
+        request = self.context.get('request')
+        is_active = request and request.user and request.user.is_authenticated
+        masjid = Masjid.objects.create(address=address, is_active=is_active, **validated_data)
         
         # Create iqamas directly
         for iqama_data in iqamas_data:

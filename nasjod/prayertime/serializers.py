@@ -9,7 +9,7 @@ from .models import JumuahPrayerTime, EidPrayerTime, IqamaTime, PrayerTime
 
 class BasePrayerTimeSerializer(serializers.ModelSerializer):
     hijri_date = serializers.CharField(read_only=True)
-    location = AddressSerializer()
+    location = AddressSerializer(required=False, allow_null=True)
     masjids = serializers.SlugRelatedField(
         many=True,
         slug_field='uuid',  # Use the UUID for masjid
