@@ -81,6 +81,7 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:${{ steps.vars.outputs.env_tag }}
             ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ github.ref_name == 'main' && format('{0}:latest', env.IMAGE) || '' }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -94,6 +95,12 @@ jobs:
           docker buildx imagetools create \
             --tag "$IMAGE:$ENV_TAG" \
             "$IMAGE:$SHA"
+          # latest always mirrors production (main)
+          if [ "$ENV_TAG" = "prod" ]; then
+            docker buildx imagetools create \
+              --tag "$IMAGE:latest" \
+              "$IMAGE:$SHA"
+          fi
 
   deploy:
     needs: image
