@@ -12,7 +12,7 @@ class TestURLPaths:
         """GET /version/ returns 200 with version key"""
         response = api_client.get('/version/')
         assert response.status_code == status.HTTP_200_OK
-        assert 'version' in response.data
+        assert 'version' in response.json()
 
     def test_version_url_reverse(self):
         """reverse('version') returns unprefixed path"""
@@ -115,8 +115,8 @@ class TestURLPaths:
         assert response.status_code in [status.HTTP_200_OK, status.HTTP_302_FOUND]
 
     def test_iqama_time_list_url_reverse(self):
-        """reverse('iqama-time-list') returns unprefixed path"""
-        path = reverse('iqama-time-list')
+        """reverse('iqamas-list') returns unprefixed path"""
+        path = reverse('iqamas-list')
         assert path == '/iqamas/'
         assert not path.startswith('/api/')
 
