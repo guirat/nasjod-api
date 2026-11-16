@@ -123,7 +123,7 @@ jobs:
           # Print HTTP status and Coolify's JSON response (no secrets in it) so failures are diagnosable.
           code=$(curl --silent --show-error \
             --connect-timeout 15 --max-time 60 --retry 2 --retry-connrefused \
-            --output /tmp/coolify.out --write-out '%{http_code}' \
+            --request POST --output /tmp/coolify.out --write-out '%{http_code}' \
             --header "Authorization: Bearer $COOLIFY_TOKEN" \
             --header "Accept: application/json" \
             "$COOLIFY_WEBHOOK")
