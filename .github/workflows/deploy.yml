@@ -120,12 +120,16 @@ jobs:
           if [ -z "$COOLIFY_TOKEN" ] || [ -z "$COOLIFY_WEBHOOK" ]; then
             echo "COOLIFY_TOKEN or COOLIFY_WEBHOOK is not set for this environment"; exit 1
           fi
-          # --fail: any non-2xx response fails the job. Response body is not echoed.
-          curl --fail --silent --show-error \
+          # Print HTTP status and Coolify's JSON response (no secrets in it) so failures are diagnosable.
+          code=$(curl --silent --show-error \
             --connect-timeout 15 --max-time 60 --retry 2 --retry-connrefused \
-            --output /dev/null \
+            --output /tmp/coolify.out --write-out '%{http_code}' \
             --header "Authorization: Bearer $COOLIFY_TOKEN" \
-            "$COOLIFY_WEBHOOK"
+            --header "Accept: application/json" \
+            "$COOLIFY_WEBHOOK")
+          echo "Coolify HTTP status: $code"
+          head -c 500 /tmp/coolify.out; echo
+          case "$code" in 2??) ;; *) exit 1 ;; esac
           echo "Coolify redeploy accepted"
 
       - name: Summary
