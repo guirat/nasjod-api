@@ -110,7 +110,7 @@ def test_masjid_permissions(api_client, manager_user, assistant_user, mousalli_u
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 @pytest.mark.django_db
-def test_masjid_creation_permissions(api_client, masjid_payload, admin_user, manager_user, assistant_user, mousalli_user, imam_user):
+def test_masjid_creation_inactive_for_all_users(api_client, masjid_payload, admin_user, manager_user, assistant_user, mousalli_user, imam_user):
     url = reverse('masjid-list')
     Masjid.objects.all().delete()
 
@@ -119,7 +119,7 @@ def test_masjid_creation_permissions(api_client, masjid_payload, admin_user, man
     response = api_client.post(url, masjid_payload, format='json')
     assert response.status_code == status.HTTP_201_CREATED
     admin_masjid = Masjid.objects.get(uuid=response.data['uuid'])
-    assert admin_masjid.is_active is True
+    assert admin_masjid.is_active is False
     admin_masjid.delete()
 
     # Manager
@@ -127,7 +127,7 @@ def test_masjid_creation_permissions(api_client, masjid_payload, admin_user, man
     response = api_client.post(url, masjid_payload, format='json')
     assert response.status_code == status.HTTP_201_CREATED
     manager_masjid = Masjid.objects.get(uuid=response.data['uuid'])
-    assert manager_masjid.is_active is True
+    assert manager_masjid.is_active is False
     manager_masjid.delete()
 
     # Assistant
@@ -135,7 +135,7 @@ def test_masjid_creation_permissions(api_client, masjid_payload, admin_user, man
     response = api_client.post(url, masjid_payload, format='json')
     assert response.status_code == status.HTTP_201_CREATED
     assistant_masjid = Masjid.objects.get(uuid=response.data['uuid'])
-    assert assistant_masjid.is_active is True
+    assert assistant_masjid.is_active is False
     assistant_masjid.delete()
 
     # Mousalli
@@ -143,7 +143,7 @@ def test_masjid_creation_permissions(api_client, masjid_payload, admin_user, man
     response = api_client.post(url, masjid_payload, format='json')
     assert response.status_code == status.HTTP_201_CREATED
     mousalli_masjid = Masjid.objects.get(uuid=response.data['uuid'])
-    assert mousalli_masjid.is_active is True
+    assert mousalli_masjid.is_active is False
     mousalli_masjid.delete()
 
     # Imam
@@ -151,7 +151,7 @@ def test_masjid_creation_permissions(api_client, masjid_payload, admin_user, man
     response = api_client.post(url, masjid_payload, format='json')
     assert response.status_code == status.HTTP_201_CREATED
     imam_masjid = Masjid.objects.get(uuid=response.data['uuid'])
-    assert imam_masjid.is_active is True
+    assert imam_masjid.is_active is False
     imam_masjid.delete()
 
     # Anonymous
