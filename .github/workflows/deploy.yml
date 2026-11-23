@@ -20,6 +20,7 @@ permissions:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
+  DISCOVERY_IMAGE: ghcr.io/${{ github.repository }}/nasjod-discovery
 
 jobs:
   image:
@@ -86,6 +87,21 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
+      - name: Build and push discovery image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: mosque_discovery
+          file: mosque_discovery/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DISCOVERY_IMAGE }}:${{ steps.vars.outputs.env_tag }}
+            ${{ env.DISCOVERY_IMAGE }}:${{ github.sha }}
+            ${{ github.ref_name == 'main' && format('{0}:latest', env.DISCOVERY_IMAGE) || '' }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
       - name: Rollback - re-tag existing SHA image as environment tag
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -95,11 +111,17 @@ jobs:
           docker buildx imagetools create \
             --tag "$IMAGE:$ENV_TAG" \
             "$IMAGE:$SHA"
+          docker buildx imagetools create \
+            --tag "$DISCOVERY_IMAGE:$ENV_TAG" \
+            "$DISCOVERY_IMAGE:$SHA"
           # latest always mirrors production (main)
           if [ "$ENV_TAG" = "prod" ]; then
             docker buildx imagetools create \
               --tag "$IMAGE:latest" \
               "$IMAGE:$SHA"
+            docker buildx imagetools create \
+              --tag "$DISCOVERY_IMAGE:latest" \
+              "$DISCOVERY_IMAGE:$SHA"
           fi
 
   deploy:
