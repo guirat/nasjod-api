@@ -22,17 +22,7 @@ services:
       - ./envs/app.env
     environment:
       # used only by `manage.py import_staged_mosques` (reads/updates staging; never written by discovery to main)
-      STAGING_DATABASE_URL: postgresql://staging:${STAGING_DB_PASSWORD:-staging}@staging_db:5432/staging
-
-  # --- mosque discovery (separate DB; never touches the main DB) ---
-  staging_db:
-    image: postgis/postgis:latest
-    environment:
-      POSTGRES_USER: staging
-      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:-staging}
-      POSTGRES_DB: staging
-    volumes:
-      - staging_data:/var/lib/postgresql/data
+      STAGING_DATABASE_URL: ${STAGING_DATABASE_URL:-}
 
   redis:
     image: redis:7-alpine
@@ -53,17 +43,15 @@ services:
   discovery:
     build: ./mosque_discovery
     depends_on:
-      - staging_db
       - mawaqit_api
     environment:
-      STAGING_DATABASE_URL: postgresql://staging:${STAGING_DB_PASSWORD:-staging}@staging_db:5432/staging
+      STAGING_DATABASE_URL: ${STAGING_DATABASE_URL}
       GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
       MAWAQIT_API_URL: http://mawaqit_api:8000
       MAWAQIT_API_TOKEN: ${MAWAQIT_API_TOKEN:-}
       CRAWL_INTERVAL_HOURS: ${CRAWL_INTERVAL_HOURS:-168}
-    restart: unless-stopped
+    restart: "no"
 
 volumes:
-  staging_data:
   postgres_data_prod:
   redis_data:
