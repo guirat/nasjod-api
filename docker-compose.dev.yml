@@ -39,13 +39,32 @@ services:
     volumes:
       - staging_data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+
+  mawaqit_api:
+    # Build from pinned commit of mrsofiane/mawaqit-api (SHA to be verified)
+    build:
+      context: https://github.com/mrsofiane/mawaqit-api.git#main
+    environment:
+      MAWAQIT_API_TOKEN: ${MAWAQIT_API_TOKEN:-}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
   discovery:
     build: ./mosque_discovery
     depends_on:
       - staging_db
+      - mawaqit_api
     environment:
       STAGING_DATABASE_URL: postgresql://staging:${STAGING_DB_PASSWORD:-staging}@staging_db:5432/staging
       GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
+      MAWAQIT_API_URL: http://mawaqit_api:8000
+      MAWAQIT_API_TOKEN: ${MAWAQIT_API_TOKEN:-}
       CRAWL_INTERVAL_HOURS: ${CRAWL_INTERVAL_HOURS:-168}
     restart: unless-stopped
 
@@ -53,3 +72,4 @@ volumes:
   staging_data:
   postgres_data_dev:
   static_volume:
+  redis_data:
