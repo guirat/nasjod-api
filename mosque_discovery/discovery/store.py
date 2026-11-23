@@ -13,15 +13,15 @@ MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "migrations")
 
 UPSERT = """
 INSERT INTO staged_mosque (source, source_id, name, name_ar, lat, lon, geom, address, city, state,
-                           zip_code, country, phone, raw)
+                           zip_code, country, phone, image_url, raw)
 VALUES (%(source)s, %(source_id)s, %(name)s, %(name_ar)s, %(lat)s, %(lon)s,
         ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography, %(address)s, %(city)s,
-        %(state)s, %(zip_code)s, %(country)s, %(phone)s, %(raw)s)
+        %(state)s, %(zip_code)s, %(country)s, %(phone)s, %(image_url)s, %(raw)s)
 ON CONFLICT (source, source_id) DO UPDATE SET
     name = EXCLUDED.name, name_ar = EXCLUDED.name_ar, lat = EXCLUDED.lat, lon = EXCLUDED.lon,
     geom = EXCLUDED.geom, address = EXCLUDED.address, city = EXCLUDED.city, state = EXCLUDED.state,
     zip_code = EXCLUDED.zip_code, country = EXCLUDED.country, phone = EXCLUDED.phone,
-    raw = EXCLUDED.raw, last_seen = now()
+    image_url = EXCLUDED.image_url, raw = EXCLUDED.raw, last_seen = now()
 RETURNING (xmax = 0) AS inserted
 """  # status / matched_* are intentionally never touched on update
 

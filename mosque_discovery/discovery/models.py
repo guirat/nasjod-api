@@ -17,6 +17,7 @@ class Candidate:
     zip_code: Optional[str] = None
     country: Optional[str] = "Tunisia"
     phone: Optional[str] = None
+    image_url: Optional[str] = None
     raw: dict = field(default_factory=dict)
 
 

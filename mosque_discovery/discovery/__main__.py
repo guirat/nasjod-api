@@ -9,7 +9,7 @@ from . import store
 log = logging.getLogger("discovery")
 
 
-def crawl_once(conn, sources, max_requests=None):
+def crawl_once(conn, sources, max_requests=None, mawaqit_input=None, country=None):
     exit_code = 0
     for name in sources:
         kwargs = {}
@@ -18,6 +18,11 @@ def crawl_once(conn, sources, max_requests=None):
                 log.warning("GOOGLE_PLACES_API_KEY not set; skipping google_places")
                 continue
             kwargs["max_requests"] = max_requests
+        elif name == "mawaqit":
+            if mawaqit_input:
+                kwargs["input"] = mawaqit_input
+            if country:
+                kwargs["country"] = country
         adapter = ADAPTERS[name](**kwargs)
         try:
             ins, upd = store.upsert_candidates(conn, adapter.fetch())
@@ -36,6 +41,8 @@ def main(argv=None):
     sp_crawl = sub.add_parser("crawl", help="one-shot crawl")
     sp_crawl.add_argument("--source", action="append", choices=sorted(ADAPTERS),
                           help="crawl source (default: mawaqit only)")
+    sp_crawl.add_argument("--mawaqit-input", help="Mawaqit data: URL or file path (default: live map)")
+    sp_crawl.add_argument("--country", default="TN", help="country code for Mawaqit (default: TN)")
     sp_crawl.add_argument("--max-requests", type=int, default=None, help="cap Google API requests")
     sp_migrate = sub.add_parser("migrate", help="run pending migrations")
     sp_init_db = sub.add_parser("init-db", help="legacy; runs migrate")
@@ -60,7 +67,8 @@ def main(argv=None):
 
     if args.cmd == "crawl":
         sources = args.source or ["mawaqit"]
-        exit_code = crawl_once(conn, sources, args.max_requests)
+        exit_code = crawl_once(conn, sources, max_requests=args.max_requests,
+                               mawaqit_input=args.mawaqit_input, country=args.country)
         return exit_code
 
     if args.cmd == "enrich":
