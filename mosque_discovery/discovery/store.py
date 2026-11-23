@@ -1,4 +1,6 @@
+import glob
 import json
+import logging
 import os
 
 import psycopg2
@@ -6,7 +8,8 @@ import psycopg2.extras
 
 from .dedupe import find_duplicates
 
-SCHEMA = os.path.join(os.path.dirname(__file__), "..", "schema.sql")
+log = logging.getLogger("discovery")
+MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "migrations")
 
 UPSERT = """
 INSERT INTO staged_mosque (source, source_id, name, name_ar, lat, lon, geom, address, city, state,
@@ -27,10 +30,91 @@ def connect(url=None):
     return psycopg2.connect(url or os.environ["STAGING_DATABASE_URL"])
 
 
-def init_schema(conn):
-    with open(SCHEMA) as f, conn.cursor() as cur:
-        cur.execute(f.read())
+def _ensure_migrations_table(conn):
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version TEXT PRIMARY KEY,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
     conn.commit()
+
+
+def _get_applied_migrations(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT version FROM schema_migrations ORDER BY version")
+        return {row[0] for row in cur.fetchall()}
+
+
+def _get_migration_files():
+    """Return list of migration files in order: (version, up_path, down_path or None)."""
+    migrations = []
+    for up_path in sorted(glob.glob(os.path.join(MIGRATIONS_DIR, "*.sql"))):
+        filename = os.path.basename(up_path)
+        if filename.endswith(".down.sql"):
+            continue
+        version = filename[:-4]  # remove .sql
+        down_path = up_path[:-4] + ".down.sql"
+        down_path = down_path if os.path.exists(down_path) else None
+        migrations.append((version, up_path, down_path))
+    return migrations
+
+
+def _adopt_existing_db(conn):
+    """Record 0001 as applied if staged_mosque exists but schema_migrations doesn't."""
+    _ensure_migrations_table(conn)
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables
+                WHERE table_name='staged_mosque'
+            )
+        """)
+        staged_exists = cur.fetchone()[0]
+
+    if staged_exists:
+        applied = _get_applied_migrations(conn)
+        if "0001_initial" not in applied:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO schema_migrations (version) VALUES (%s)",
+                    ("0001_initial",)
+                )
+            conn.commit()
+            log.info("Recorded 0001_initial as applied (adopted existing DB)")
+
+
+def migrate(conn):
+    """Apply all pending migrations in order."""
+    _ensure_migrations_table(conn)
+    _adopt_existing_db(conn)
+
+    applied = _get_applied_migrations(conn)
+    migrations = _get_migration_files()
+
+    for version, up_path, down_path in migrations:
+        if version in applied:
+            log.debug("Skipping already-applied migration %s", version)
+            continue
+
+        log.info("Applying migration %s", version)
+        with open(up_path) as f:
+            sql = f.read()
+
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            cur.execute(
+                "INSERT INTO schema_migrations (version) VALUES (%s)",
+                (version,)
+            )
+        conn.commit()
+        log.info("Migration %s applied", version)
+
+
+def init_schema(conn):
+    """Legacy function; calls migrate."""
+    migrate(conn)
 
 
 def upsert_candidates(conn, candidates):

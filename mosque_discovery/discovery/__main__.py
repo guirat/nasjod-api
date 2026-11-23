@@ -38,14 +38,19 @@ def main(argv=None):
     sub.choices["crawl"].add_argument("--once", action="store_true", help="(default) single run")
     sub.choices["loop"].add_argument("--interval-hours", type=float,
                                      default=float(os.environ.get("CRAWL_INTERVAL_HOURS", 168)))
+    sub.add_parser("migrate")
     sub.add_parser("init-db")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     conn = store.connect()
-    store.init_schema(conn)
-    if args.cmd == "init-db":
+    if args.cmd == "migrate":
+        store.migrate(conn)
         return 0
+    if args.cmd == "init-db":
+        store.migrate(conn)
+        return 0
+    store.init_schema(conn)
     sources = args.source or list(ADAPTERS)
     if args.cmd == "crawl":
         crawl_once(conn, sources, args.max_requests)
