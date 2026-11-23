@@ -4,9 +4,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY discovery ./discovery
-COPY tests ./tests
-COPY schema.sql ./schema.sql
+COPY migrations ./migrations
 RUN useradd -m discovery
 USER discovery
-# default: periodic crawl loop (see README). One-shot: `python -m discovery crawl --once`
-CMD ["python", "-m", "discovery", "loop"]
+CMD ["python", "-m", "discovery", "crawl"]
