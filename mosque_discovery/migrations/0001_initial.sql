@@ -1,5 +1,3 @@
-CREATE EXTENSION IF NOT EXISTS postgis;
-
 CREATE TABLE IF NOT EXISTS staged_mosque (
     id                  BIGSERIAL PRIMARY KEY,
     source              TEXT NOT NULL,              -- 'mawaqit' | 'google_places'
