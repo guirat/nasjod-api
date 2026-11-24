@@ -115,29 +115,22 @@ def test_apply_details_mapping():
     addr = Address.objects.create(country='tunisia', coordinates=Point(10.7, 34.7, srid=4326))
     masjid = Masjid.objects.create(name='Test', address=addr)
 
-    details = {
-        'parking': True,
-        'disabled_access': False,
-        'ablution_room': True,
-        'women_space': True,
-        'adult_courses': False,
-        'children_courses': True,
-        'salat_al_eid': True,
-        'salat_al_janaza': False,
-        'telephone': '+216123456',
-    }
+    import json, os
+    fixture = os.path.join(os.path.dirname(__file__), '..', 'fixtures', 'mawaqit_api_sample.json')
+    with open(fixture) as f:
+        details = json.load(f)
 
     _apply_details(masjid, details)
 
     assert masjid.parking is True
-    assert masjid.disabled_access is False
+    assert masjid.disabled_access is True
     assert masjid.ablution_room is True
-    assert masjid.woman_space is True
-    assert masjid.adult_courses is False
+    assert masjid.woman_space is False
+    assert masjid.adult_courses is True
     assert masjid.children_courses is True
-    assert masjid.salat_al_eid is True
-    assert masjid.salat_al_janaza is False
-    assert masjid.telephone == '+216123456'
+    assert masjid.salat_al_eid is False
+    assert masjid.salat_al_janaza is True
+    assert masjid.telephone == details['phone']
 
 
 @pytest.mark.django_db
