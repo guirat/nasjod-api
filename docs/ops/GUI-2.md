@@ -35,6 +35,7 @@ Actions → Deploy → Run workflow, choose branch `staging` (or `main`), set `r
 
 ### Rollback verification (GUI-32)
 Coolify answers `200 "Deployment already queued for this commit."` and starts nothing while a deployment is queued/running for the resource, so a rollback right after a push can be swallowed. The deploy step therefore: triggers, and if the answer is "already queued" waits until `GET /api/v1/deployments` shows nothing in flight for the resource, then triggers again and polls `GET /api/v1/deployments/<uuid>` until `finished` (fails on `failed`, any unreadable status, timeout, or if still deduplicated). The step has a 25 min timeout. Deployment logs are never printed (public repo). To prove the running image, compare the image revision label on the VPS/Coolify with `docker buildx imagetools inspect ghcr.io/guirat/nasjod-api:<sha>`.
+**Known limit:** the in-flight filter in `wait_idle` probably does not match per resource (list items carry `application_id`/`application_name`, not a uuid), so it counts every in-flight deployment on the Coolify instance. That only waits longer, but a concurrent deploy of another app can hit the 10 min wait and fail the rollback; rerun it. Optional follow-up: filter on `application_name`.
 **Token scope:** `COOLIFY_TOKEN` needs `read` (plus `deploy`) so the job can verify. With a deploy-only token the job prints `accepted (NOT verified: COOLIFY_TOKEN lacks read scope)`, never "finished".
 
 ## Open points

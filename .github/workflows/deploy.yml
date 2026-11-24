@@ -151,7 +151,7 @@ jobs:
               --request "$1" --output "$out" --write-out '%{http_code}' \
               --header "Authorization: Bearer $COOLIFY_TOKEN" \
               --header "Accept: application/json" \
-              "$2" || echo 000
+              "$2" || true # curl already printed 000 via --write-out
           }
 
           # Never print raw response bodies from the deployments API: they carry deployment logs
@@ -216,7 +216,7 @@ jobs:
             # flight. The returned uuid is not a real deployment, so do not poll it: wait for the
             # resource's in-flight deployments, then trigger again so the current tag is pulled.
             echo "Deployment already in flight; waiting for it to finish, then re-triggering."
-            wait_idle; rc=$?
+            rc=0; wait_idle || rc=$?
             if [ $rc -eq 2 ]; then
               echo "::warning::Token cannot read deployments; cannot wait. Deployment was NOT verified."; exit 1
             elif [ $rc -ne 0 ]; then exit 1; fi
@@ -226,7 +226,7 @@ jobs:
             fi
           fi
 
-          wait_deploy "$dep_uuid"; rc=$?
+          rc=0; wait_deploy "$dep_uuid" || rc=$?
           case $rc in
             0) echo "Coolify redeploy finished (deployment $dep_uuid)" ;;
             2) echo "::warning::Coolify redeploy accepted (NOT verified: COOLIFY_TOKEN lacks read scope)" ;;
