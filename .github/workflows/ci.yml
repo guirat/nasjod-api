@@ -67,8 +67,10 @@ jobs:
         env:
           PGPASSWORD: ci-only-password
         run: |
-          # Create staging user (ignore if exists)
-          psql -h localhost -U nasjod -d nasjod -c "CREATE USER staging WITH PASSWORD 'ci-only-password';" 2>/dev/null || true
+          # Create staging user with CREATEDB privilege (for Django test database creation)
+          psql -h localhost -U nasjod -d nasjod -c "CREATE USER staging WITH PASSWORD 'ci-only-password' CREATEDB;" 2>/dev/null || true
+          # Grant CREATEDB if user already exists
+          psql -h localhost -U nasjod -d nasjod -c "ALTER USER staging WITH CREATEDB;" 2>/dev/null || true
           # Create staging database with PostGIS
           psql -h localhost -U nasjod -d nasjod -c "CREATE DATABASE staging OWNER staging;" 2>/dev/null || true
           # Enable PostGIS in staging database

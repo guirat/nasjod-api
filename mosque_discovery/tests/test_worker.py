@@ -72,38 +72,39 @@ class TestMigrations:
     @pytest.mark.skipif(not url, reason="STAGING_TEST_DATABASE_URL not set")
     def test_migrate_adopts_old_schema(self, db_conn):
         """T1 AC: adopts DB created by old schema.sql (records 0001 without running)."""
-        # Simulate old schema.sql by creating the table directly
+        # Simulate old schema.sql by creating just the 0001 schema
         with db_conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS postgis")
             cur.execute("""
                 CREATE TABLE staged_mosque (
                     id BIGSERIAL PRIMARY KEY,
                     source TEXT NOT NULL,
                     source_id TEXT NOT NULL,
-                    name TEXT,
+                    name TEXT NOT NULL DEFAULT '',
                     name_ar TEXT,
-                    lat DECIMAL,
-                    lon DECIMAL,
-                    geom GEOMETRY,
+                    lat DOUBLE PRECISION NOT NULL,
+                    lon DOUBLE PRECISION NOT NULL,
+                    geom geography(Point, 4326),
                     address TEXT,
                     city TEXT,
                     state TEXT,
                     zip_code TEXT,
                     country TEXT,
                     phone TEXT,
-                    raw JSONB,
-                    first_seen TIMESTAMPTZ DEFAULT NOW(),
-                    last_seen TIMESTAMPTZ DEFAULT NOW(),
-                    status TEXT CHECK (status IN ('new', 'approved', 'rejected', 'imported', 'duplicate')),
-                    reviewed_by_id BIGINT,
-                    reviewed_by_username TEXT,
-                    reviewed_at TIMESTAMPTZ,
-                    duplicate_of_id BIGINT,
+                    raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    status TEXT NOT NULL DEFAULT 'new'
+                        CHECK (status IN ('new','approved','rejected','imported','duplicate')),
+                    duplicate_of_id BIGINT REFERENCES staged_mosque(id) ON DELETE SET NULL,
                     matched_masjid_id BIGINT,
-                    match_distance_m FLOAT,
-                    match_name_score FLOAT,
+                    match_distance_m DOUBLE PRECISION,
+                    match_name_score DOUBLE PRECISION,
+                    first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    last_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
                     UNIQUE(source, source_id)
                 )
             """)
+            cur.execute("CREATE INDEX IF NOT EXISTS staged_mosque_status_idx ON staged_mosque (status)")
+            cur.execute("CREATE INDEX IF NOT EXISTS staged_mosque_geom_idx ON staged_mosque USING GIST (geom)")
         db_conn.commit()
 
         # Run migrate; should record 0001 and apply only 0002
@@ -123,7 +124,7 @@ class TestMigrations:
             cur.execute("SELECT version FROM schema_migrations WHERE version='0002_review_and_enrichment'")
             assert cur.fetchone() is not None
 
-        # Revert: read and execute the down migration
+        # Revert: read and execute the down migration, then delete from schema_migrations
         down_path = Path(__file__).parent.parent / "migrations" / "0002_review_and_enrichment.down.sql"
 
         assert down_path.exists(), f"Down migration not found at {down_path}"
@@ -132,8 +133,11 @@ class TestMigrations:
             down_sql = f.read()
         with db_conn.cursor() as cur:
             cur.execute(down_sql)
+            # Delete the migration record after reverting
+            cur.execute("DELETE FROM schema_migrations WHERE version='0002_review_and_enrichment'")
         db_conn.commit()
 
+        # Verify the migration is no longer recorded
         with db_conn.cursor() as cur:
             cur.execute("SELECT version FROM schema_migrations WHERE version='0002_review_and_enrichment'")
             assert cur.fetchone() is None
