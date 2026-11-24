@@ -33,6 +33,10 @@ Coolify resources track the moving tags `staging` / `prod`. Every build gets an 
 ## Rollback
 Actions → Deploy → Run workflow, choose branch `staging` (or `main`), set `rollback_sha` to the full SHA of a previously built image. The `image` job only computes tags (no build). The gated `deploy` job re-tags that image as the env tag (no rebuild; fails if the SHA image does not exist) and calls the webhook. Production rollback pauses for approval in `production` before any tag moves.
 
+### Rollback verification (GUI-32)
+Coolify answers `200 "Deployment already queued for this commit."` and starts nothing while a deployment is queued/running for the resource, so a rollback right after a push can be swallowed. The deploy step therefore: triggers, and if the answer is "already queued" waits until `GET /api/v1/deployments` shows nothing in flight for the resource, then triggers again and polls `GET /api/v1/deployments/<uuid>` until `finished` (fails on `failed`, any unreadable status, timeout, or if still deduplicated). The step has a 25 min timeout. Deployment logs are never printed (public repo). To prove the running image, compare the image revision label on the VPS/Coolify with `docker buildx imagetools inspect ghcr.io/guirat/nasjod-api:<sha>`.
+**Token scope:** `COOLIFY_TOKEN` needs `read` (plus `deploy`) so the job can verify. With a deploy-only token the job prints `accepted (NOT verified: COOLIFY_TOKEN lacks read scope)`, never "finished".
+
 ## Open points
 1. **Runner → Coolify reachability**: GitHub-hosted runner IPs are not fixed. If Coolify is behind a firewall/allowlist, allow 443 to the Coolify API path, or use Tailscale/self-hosted runner.
 2. **Tag strategy**: see above; rollback by re-tag via `workflow_dispatch`.

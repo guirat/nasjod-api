@@ -133,6 +133,7 @@ jobs:
           done
 
       - name: Trigger Coolify redeploy
+        timeout-minutes: 25
         env:
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
           COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
@@ -141,39 +142,67 @@ jobs:
             echo "COOLIFY_TOKEN or COOLIFY_WEBHOOK is not set for this environment"; exit 1
           fi
           api_base="${COOLIFY_WEBHOOK%%/api/*}"
+          out=$(mktemp)
 
-          call() { # METHOD URL -> body in /tmp/coolify.out, prints HTTP status
+          call() { # METHOD URL -> body in $out, prints HTTP status
             curl --silent --show-error \
               --proto '=https' --proto-redir '=https' \
               --connect-timeout 15 --max-time 60 --retry 2 --retry-connrefused \
-              --request "$1" --output /tmp/coolify.out --write-out '%{http_code}' \
+              --request "$1" --output "$out" --write-out '%{http_code}' \
               --header "Authorization: Bearer $COOLIFY_TOKEN" \
               --header "Accept: application/json" \
-              "$2"
+              "$2" || echo 000
           }
 
-          # Coolify answers 200 "Deployment already queued for this commit." and does NOT start a
-          # new deployment while one is queued/running for the resource. A rollback or a quick
-          # second push would then be swallowed, so we wait for the in-flight one and re-trigger.
+          # Never print raw response bodies from the deployments API: they carry deployment logs
+          # (env/build-arg values) and this repo is public. Only .message / uuid / status are shown.
           trigger() {
             code=$(call POST "$COOLIFY_WEBHOOK")
-            echo "Coolify HTTP status: $code"
-            head -c 500 /tmp/coolify.out; echo
-            case "$code" in 2??) ;; *) exit 1 ;; esac
-            dep_uuid=$(jq -r '.deployments[0].deployment_uuid // empty' /tmp/coolify.out)
-            dep_msg=$(jq -r '.deployments[0].message // empty' /tmp/coolify.out)
+            echo "Coolify trigger HTTP status: $code"
+            case "$code" in 2??) ;; *) echo "Coolify trigger failed"; exit 1 ;; esac
+            dep_uuid=$(jq -r '.deployments[0].deployment_uuid // empty' "$out")
+            dep_msg=$(jq -r '.deployments[0].message // empty' "$out")
+            res_uuid=$(jq -r '.deployments[0].resource_uuid // empty' "$out")
+            echo "message: ${dep_msg:-<none>}"
+            if [ -z "$dep_uuid" ]; then
+              echo "Coolify response has no deployments[0].deployment_uuid (format changed?); failing."; exit 1
+            fi
           }
 
-          # Poll the deployment until it settles. Prints the final status and the log lines that
-          # name the image. Returns 2 if the status cannot be read (token without read scope).
+          already_queued() { printf '%s' "$dep_msg" | grep -qi 'already queued'; }
+
+          # Wait until no queued/in-progress deployment exists for this resource.
+          # Returns 0 when idle, 1 on timeout, 2 when the token cannot read deployments.
+          wait_idle() {
+            for _ in $(seq 1 60); do
+              c=$(call GET "$api_base/api/v1/deployments")
+              case "$c" in
+                200) ;;
+                401|403) return 2 ;;
+                *) echo "Reading in-flight deployments failed (HTTP $c)"; return 1 ;;
+              esac
+              # Items of this resource; if an item carries no resource field, count it too (safe: waits longer).
+              n=$(jq --arg r "$res_uuid" '[.[]? | select((.application_uuid // .resource_uuid // $r) == $r)] | length' "$out")
+              echo "in-flight deployments for resource: $n"
+              [ "$n" = "0" ] && return 0
+              sleep 10
+            done
+            echo "Timed out waiting for in-flight deployments"; return 1
+          }
+
+          # Poll one deployment to completion. 0 finished, 1 failed/timeout/unreadable, 2 token lacks read scope.
           wait_deploy() {
             for _ in $(seq 1 60); do
               c=$(call GET "$api_base/api/v1/deployments/$1")
-              if [ "$c" != "200" ]; then echo "::warning::cannot read deployment $1 (HTTP $c)"; return 2; fi
-              status=$(jq -r '.status // empty' /tmp/coolify.out)
-              echo "deployment $1 status: $status"
+              case "$c" in
+                200) ;;
+                401|403) return 2 ;;
+                *) echo "Reading deployment $1 failed (HTTP $c)"; return 1 ;;
+              esac
+              status=$(jq -r '.status // empty' "$out")
+              echo "deployment $1 status: ${status:-unknown}"
               case "$status" in
-                finished) jq -r '.logs // empty' /tmp/coolify.out | grep -iE 'image|digest|pull' | head -20 || true; return 0 ;;
+                finished) return 0 ;;
                 failed|cancelled*|error) return 1 ;;
               esac
               sleep 10
@@ -182,16 +211,27 @@ jobs:
           }
 
           trigger
-          if printf '%s' "$dep_msg" | grep -qi 'already queued'; then
-            echo "A deployment was already in flight ($dep_uuid); waiting for it, then re-triggering so the current image tag is pulled."
-            wait_deploy "$dep_uuid" || [ $? -eq 2 ] || true
+          if already_queued; then
+            # Coolify answers 200 "already queued" and starts nothing while a deployment is in
+            # flight. The returned uuid is not a real deployment, so do not poll it: wait for the
+            # resource's in-flight deployments, then trigger again so the current tag is pulled.
+            echo "Deployment already in flight; waiting for it to finish, then re-triggering."
+            wait_idle; rc=$?
+            if [ $rc -eq 2 ]; then
+              echo "::warning::Token cannot read deployments; cannot wait. Deployment was NOT verified."; exit 1
+            elif [ $rc -ne 0 ]; then exit 1; fi
             trigger
-            if printf '%s' "$dep_msg" | grep -qi 'already queued'; then
-              echo "Still deduplicated after waiting; failing so this is not reported as a successful deploy."; exit 1
+            if already_queued; then
+              echo "Still deduplicated after waiting; failing so this is not reported as a deploy."; exit 1
             fi
           fi
-          wait_deploy "$dep_uuid" || [ $? -eq 2 ]
-          echo "Coolify redeploy finished (deployment $dep_uuid)"
+
+          wait_deploy "$dep_uuid"; rc=$?
+          case $rc in
+            0) echo "Coolify redeploy finished (deployment $dep_uuid)" ;;
+            2) echo "::warning::Coolify redeploy accepted (NOT verified: COOLIFY_TOKEN lacks read scope)" ;;
+            *) echo "Coolify deployment $dep_uuid did not finish successfully"; exit 1 ;;
+          esac
 
       - name: Summary
         env:
