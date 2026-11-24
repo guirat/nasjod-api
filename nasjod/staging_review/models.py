@@ -36,3 +36,4 @@ class StagedMosque(models.Model):
     class Meta:
         managed = False
         db_table = 'staged_mosque'
+        permissions = [('review_stagedmosque', 'Can review staged mosques')]

@@ -1,9 +1,7 @@
 from django.contrib import admin
-from django.db import connection
-from django.urls import reverse
 from django.utils.html import format_html
-from django.utils.decorators import method_decorator
-from django.views.decorators.http import require_http_methods
+from django.utils import timezone
+from django.conf import settings
 import logging
 
 from .models import StagedMosque
@@ -11,52 +9,83 @@ from .models import StagedMosque
 log = logging.getLogger(__name__)
 
 
+def _can_transition(current_status, new_status):
+    """Check if status transition is allowed."""
+    allowed_transitions = {
+        'new': ['approved', 'rejected'],
+        'duplicate': ['approved', 'rejected'],
+        'approved': ['rejected'],  # Can undo to rejected (implicit from rejected → new)
+        'rejected': ['new'],
+    }
+    return new_status in allowed_transitions.get(current_status, [])
+
+
 def approve_rows(modeladmin, request, queryset):
-    updated = queryset.filter(
-        status__in=['new', 'duplicate']
-    ).update(
-        status='approved',
-        reviewed_by_id=request.user.id,
-        reviewed_by_username=request.user.username,
-        reviewed_at=__import__('django.utils.timezone', fromlist=['now']).now()
-    )
-    modeladmin.message_user(request, f"{updated} rows approved.")
+    """Approve selected rows with proper transition checks."""
+    now = timezone.now()
+    rows = list(queryset.using('staging'))
+    updated = 0
+    skipped = 0
+
+    for row in rows:
+        if _can_transition(row.status, 'approved'):
+            row.status = 'approved'
+            row.reviewed_by_id = request.user.id
+            row.reviewed_by_username = request.user.username
+            row.reviewed_at = now
+            row.save(using='staging')
+            updated += 1
+        else:
+            skipped += 1
+
+    modeladmin.message_user(request, f"Approved {updated} rows" + (f" ({skipped} skipped)" if skipped else ""))
 
 
 approve_rows.short_description = "Approve selected rows"
 
 
 def reject_rows(modeladmin, request, queryset):
-    updated = queryset.filter(
-        status__in=['new', 'approved', 'duplicate']
-    ).update(
-        status='rejected',
-        reviewed_by_id=request.user.id,
-        reviewed_by_username=request.user.username,
-        reviewed_at=__import__('django.utils.timezone', fromlist=['now']).now()
-    )
-    modeladmin.message_user(request, f"{updated} rows rejected.")
+    """Reject selected rows with proper transition checks."""
+    now = timezone.now()
+    rows = list(queryset.using('staging'))
+    updated = 0
+    skipped = 0
+
+    for row in rows:
+        if _can_transition(row.status, 'rejected'):
+            row.status = 'rejected'
+            row.reviewed_by_id = request.user.id
+            row.reviewed_by_username = request.user.username
+            row.reviewed_at = now
+            row.save(using='staging')
+            updated += 1
+        else:
+            skipped += 1
+
+    modeladmin.message_user(request, f"Rejected {updated} rows" + (f" ({skipped} skipped)" if skipped else ""))
 
 
 reject_rows.short_description = "Reject selected rows"
 
 
 def import_approved(modeladmin, request, queryset):
+    """Import selected approved rows into main DB."""
     from core.services.staged_import import import_staged_mosques
 
-    approved = queryset.filter(status='approved')
-    if not approved.exists():
+    approved = list(queryset.filter(status='approved').using('staging'))
+    if not approved:
         modeladmin.message_user(request, "No approved rows selected.")
         return
 
     try:
-        from django.db import connections
-        staging_conn = connections['staging'].get_connection()
-        cursor = staging_conn.cursor()
-
-        slugs = list(approved.values_list('source_id', flat=True))
-        import_staged_mosques(dry_run=False, slug_filter=slugs)
-        modeladmin.message_user(request, f"Import started for {len(slugs)} approved rows.")
+        slugs = [row.source_id for row in approved]
+        imported, skipped, errors = import_staged_mosques(dry_run=False, slug_filter=slugs)
+        msg = f"Imported {imported}"
+        if skipped:
+            msg += f", {skipped} skipped"
+        if errors:
+            msg += f", {errors} errors"
+        modeladmin.message_user(request, msg)
     except Exception as e:
         log.exception("Import failed: %s", e)
         modeladmin.message_user(request, f"Import error: {str(e)}", level='error')
@@ -65,7 +94,6 @@ def import_approved(modeladmin, request, queryset):
 import_approved.short_description = "Import selected approved rows"
 
 
-@admin.register(StagedMosque)
 class StagedMosqueAdmin(admin.ModelAdmin):
     list_display = (
         'name', 'name_ar', 'city', 'status', 'enriched_flag',
@@ -75,9 +103,12 @@ class StagedMosqueAdmin(admin.ModelAdmin):
     list_filter = ('status', 'source', ('enriched_at', admin.EmptyFieldListFilter))
     search_fields = ('name', 'name_ar', 'city', 'source_id')
     readonly_fields = (
-        'id', 'source', 'source_id', 'raw', 'details', 'enriched_at',
+        'id', 'source', 'source_id', 'name', 'name_ar', 'lat', 'lon',
+        'address', 'city', 'state', 'zip_code', 'country', 'phone',
+        'image_url', 'raw', 'details', 'enriched_at',
         'enrich_error', 'match_distance_m', 'match_name_score', 'first_seen',
-        'last_seen', 'duplicate_of_id'
+        'last_seen', 'duplicate_of_id', 'status', 'reviewed_by_id',
+        'reviewed_by_username', 'reviewed_at'
     )
     fieldsets = (
         ('Location & Identity', {
@@ -157,3 +188,8 @@ class StagedMosqueAdmin(admin.ModelAdmin):
         return request.user.is_staff and request.user.has_perm(
             'staging_review.review_stagedmosque'
         )
+
+
+# Register admin only if staging DB is configured
+if 'staging' in settings.DATABASES:
+    admin.site.register(StagedMosque, StagedMosqueAdmin)
