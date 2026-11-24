@@ -20,6 +20,7 @@ permissions:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
+  DISCOVERY_IMAGE: ghcr.io/${{ github.repository }}/nasjod-discovery
 
 jobs:
   image:
@@ -85,6 +86,19 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
+      - name: Build and push discovery image
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: mosque_discovery
+          file: mosque_discovery/Dockerfile
+          push: true
+          # Immutable tag only. Moving tags are set in the gated deploy job.
+          tags: ${{ env.DISCOVERY_IMAGE }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
   deploy:
     needs: image
     runs-on: ubuntu-latest
@@ -110,11 +124,13 @@ jobs:
           SHA: ${{ needs.image.outputs.sha }}
           ENV_TAG: ${{ needs.image.outputs.env_tag }}
         run: |
-          docker buildx imagetools create --tag "$IMAGE:$ENV_TAG" "$IMAGE:$SHA"
-          # latest always mirrors production (main)
-          if [ "$ENV_TAG" = "prod" ]; then
-            docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:$SHA"
-          fi
+          for img in "$IMAGE" "$DISCOVERY_IMAGE"; do
+            docker buildx imagetools create --tag "$img:$ENV_TAG" "$img:$SHA"
+            # latest always mirrors production (main)
+            if [ "$ENV_TAG" = "prod" ]; then
+              docker buildx imagetools create --tag "$img:latest" "$img:$SHA"
+            fi
+          done
 
       - name: Trigger Coolify redeploy
         env:

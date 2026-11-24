@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "user",
     "masjid",
     "prayertime",
+    "staging_review",
 ]
 
 MIDDLEWARE = [
@@ -111,6 +112,26 @@ DATABASES = {
         'PORT': '',
     }
 }
+
+# Add staging database if STAGING_DATABASE_URL is set
+_staging_db_url = os.environ.get("STAGING_DATABASE_URL")
+if _staging_db_url:
+    from urllib.parse import urlparse, unquote
+    parsed = urlparse(_staging_db_url)
+    DATABASES['staging'] = {
+        'ENGINE': 'django.contrib.gis.db.backends.postgis',
+        'NAME': parsed.path.lstrip('/'),
+        'USER': parsed.username,
+        'PASSWORD': unquote(parsed.password) if parsed.password else '',
+        'HOST': parsed.hostname,
+        'PORT': str(parsed.port) if parsed.port else '',
+        'CONN_MAX_AGE': 0,
+        # Tests clone the already-provisioned staging DB (extension + schema),
+        # so the non-superuser staging role never has to CREATE EXTENSION.
+        'TEST': {'TEMPLATE': parsed.path.lstrip('/')},
+    }
+
+DATABASE_ROUTERS = ['core.db_routers.StagingRouter']
 
 MAX_RETRIES_DB = 10
 
