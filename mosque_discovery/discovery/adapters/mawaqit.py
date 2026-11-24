@@ -72,15 +72,15 @@ class MawaqitAdapter(SourceAdapter):
 
     @staticmethod
     def _normalize_image_url(image1):
-        """Normalize image URL: remove archive.org wrapper, keep only https://, unescape."""
+        """Normalize image URL: unescape, remove archive wrapper, keep only https://."""
         if not image1 or not isinstance(image1, str):
             return None
 
-        # Remove web.archive.org wrapper: https://web.archive.org/web/<timestamp>*/<url>
-        image1 = re.sub(r'^https://web\.archive\.org/web/\d+[a-z_]*/(.*)$', r'\1', image1)
-
-        # Unescape backslash-escaped slashes
+        # Unescape backslash-escaped slashes FIRST
         image1 = image1.replace(r'\/', '/')
+
+        # Remove web.archive.org wrapper: http(s)://web.archive.org/web/<timestamp>*/<url>
+        image1 = re.sub(r'^https?://web\.archive\.org/web/\d+[a-z_]*/(.*)$', r'\1', image1)
 
         # Keep only https:// URLs
         if not image1.startswith("https://"):
@@ -97,6 +97,12 @@ class MawaqitAdapter(SourceAdapter):
             return None
         if not slug or (lat == 0 and lon == 0):
             return None
+
+        # Validate Tunisia bounding box: lat 30-38.5, lon 7-12
+        if not (30 <= lat <= 38.5 and 7 <= lon <= 12):
+            log.warning("Skipping %s: outside Tunisia bbox (lat=%f, lon=%f)", slug, lat, lon)
+            return None
+
         name = (item.get("name") or "").strip()
         image_url = MawaqitAdapter._normalize_image_url(item.get("image1"))
         return Candidate(
