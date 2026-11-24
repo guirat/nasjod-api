@@ -91,4 +91,4 @@ class StagedMosqueAdminTest(TransactionTestCase):
         """Test that queries use staging DB."""
         queryset = self.admin.get_queryset(None)
         # This should use staging DB
-        self.assertEqual(queryset.query.db, 'staging')
+        self.assertEqual(queryset.db, "staging")
