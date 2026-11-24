@@ -116,13 +116,13 @@ DATABASES = {
 # Add staging database if STAGING_DATABASE_URL is set
 _staging_db_url = os.environ.get("STAGING_DATABASE_URL")
 if _staging_db_url:
-    from urllib.parse import urlparse
+    from urllib.parse import urlparse, unquote
     parsed = urlparse(_staging_db_url)
     DATABASES['staging'] = {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
         'NAME': parsed.path.lstrip('/'),
         'USER': parsed.username,
-        'PASSWORD': parsed.password,
+        'PASSWORD': unquote(parsed.password) if parsed.password else '',
         'HOST': parsed.hostname,
         'PORT': str(parsed.port) if parsed.port else '',
         'CONN_MAX_AGE': 0,
