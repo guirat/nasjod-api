@@ -1,0 +1,27 @@
+{
+  "id": "4c3c2c1c0c",
+  "slug": "jami-ibn-abbas-tunis",
+  "name": "Jami Ibn Abbas",
+  "address": "123 Rue Ibn Abbas, Tunis 1000, Tunisia",
+  "latitude": 36.7969,
+  "longitude": 10.1815,
+  "image1": "https://cdn.mawaqit.net/uploads/mosque/4c3c2c1c0c/photo.jpg",
+  "phone": "21698123456",
+  "email": "info@example.com",
+  "website": "https://example.com",
+  "womenSpace": false,
+  "janazaPrayer": true,
+  "aidPrayer": false,
+  "childrenCourses": true,
+  "adultCourses": true,
+  "handicapAccessibility": true,
+  "ablutions": true,
+  "parking": true,
+  "prayerTimes": {
+    "fajr": "04:30",
+    "dhuhr": "12:15",
+    "asr": "15:30",
+    "maghrib": "18:45",
+    "isha": "20:00"
+  }
+}

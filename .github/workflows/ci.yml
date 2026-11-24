@@ -54,6 +54,7 @@ jobs:
       DB_PASS: ci-only-password
       DB_HOST: localhost
       S3_STORAGE_BACKEND: "0"
+      STAGING_DATABASE_URL: postgresql://staging:ci-only-password@localhost:5432/staging
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -61,7 +62,19 @@ jobs:
       - name: Install GDAL/GEOS/PROJ
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gdal-bin libgdal-dev libgeos-dev libproj-dev
+          sudo apt-get install -y --no-install-recommends gdal-bin libgdal-dev libgeos-dev libproj-dev postgresql-client
+      - name: Create staging database
+        env:
+          PGPASSWORD: ci-only-password
+        run: |
+          # Create staging user with CREATEDB privilege (for Django test database creation)
+          psql -h localhost -U nasjod -d nasjod -c "CREATE USER staging WITH PASSWORD 'ci-only-password' CREATEDB;" 2>/dev/null || true
+          # Grant CREATEDB if user already exists
+          psql -h localhost -U nasjod -d nasjod -c "ALTER USER staging WITH CREATEDB;" 2>/dev/null || true
+          # Create staging database with PostGIS
+          psql -h localhost -U nasjod -d nasjod -c "CREATE DATABASE staging OWNER staging;" 2>/dev/null || true
+          # Enable PostGIS in staging database
+          psql -h localhost -U nasjod -d staging -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>/dev/null || true
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
@@ -70,6 +83,36 @@ jobs:
       - name: Run pytest
         working-directory: nasjod
         run: pytest
+
+  discovery-test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: staging
+          POSTGRES_USER: staging
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U staging"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      STAGING_TEST_DATABASE_URL: postgresql://staging:ci-only-password@localhost:5432/staging
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r mosque_discovery/requirements.txt -r mosque_discovery/requirements-dev.txt
+      - name: Run discovery tests
+        run: pytest mosque_discovery/tests
 
   docker-build:
     runs-on: ubuntu-latest
