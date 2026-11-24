@@ -1,7 +1,6 @@
 """Mawaqit adapter.
 
-Mawaqit has no official public API. `/api/2.0/mosque/search` requires an
-`Api-Access-Token` (401 without it), but the site's own map endpoint
+Mawaqit has no official public API. The site's map endpoint
 `GET https://mawaqit.net/api/2.0/mosque/map/{ISO country code}` is unauthenticated
 and returns every mosque of a country in a single JSON array (~2.5k for TN,
 ~1.3 MB): slug, name, address, city, zipcode, lat, lng, image1.
@@ -9,14 +8,13 @@ and returns every mosque of a country in a single JSON array (~2.5k for TN,
 ToS / politeness: this is an undocumented endpoint and may change or be blocked;
 Mawaqit's terms are not an explicit licence to bulk-copy their data. We make ONE
 request per crawl, identify ourselves in the User-Agent, back off on 429/5xx, and
-default to a weekly crawl. Rows land in staging only and need human approval. Get
-written permission from Mawaqit (contact@mawaqit.net) before relying on this in
-production. If they issue an API token, set MAWAQIT_API_TOKEN and it is sent as
-`Api-Access-Token`.
+default to a weekly crawl. Rows land in staging only and need human approval.
+
+The source discovery data always comes from the public map endpoint or an
+archived export. For enrichment details, use the self-hosted mawaqit-api service.
 """
 import json
 import logging
-import os
 import re
 import time
 from typing import Iterator
@@ -51,9 +49,6 @@ class MawaqitAdapter(SourceAdapter):
     def _get_url(self):
         """Fetch from HTTP(S) URL with retry/backoff."""
         headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-        token = os.environ.get("MAWAQIT_API_TOKEN")
-        if token:
-            headers["Api-Access-Token"] = token
         for attempt in range(1, self.retries + 1):
             resp = self.session.get(self.input, headers=headers, timeout=60)
             if resp.status_code == 200:
