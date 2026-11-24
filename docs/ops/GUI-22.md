@@ -24,8 +24,8 @@ CREATE DATABASE staging OWNER staging;
 CREATE EXTENSION postgis;
 
 -- Restrict staging role to this DB only
-REVOKE CONNECT ON DATABASE <main_db_name> FROM PUBLIC;
-GRANT CONNECT ON DATABASE <main_db_name> TO <app_role>;
+REVOKE CONNECT ON DATABASE $DB_NAME FROM PUBLIC;
+GRANT CONNECT ON DATABASE $DB_NAME TO $DB_USER;
 ```
 
 Verification: As the `staging` user, verify you cannot connect to the main DB:
@@ -51,6 +51,11 @@ GOOGLE_PLACES_API_KEY=<key>  # Only if using Google Places adapter
 STAGING_DATABASE_URL=postgresql://staging:<password>@postgres:5432/staging
 ```
 
+Where:
+- `<password>` is the password for the `staging` PostgreSQL role
+- `<token>` is the MAWAQIT_API_TOKEN from your internal mawaqit-api service
+- `<key>` is the Google Places API key (if using the Google adapter)
+
 ### 3. Configure Coolify Scheduled Tasks
 
 The discovery service runs on demand via Coolify scheduled tasks. Set up two tasks:
@@ -71,11 +76,12 @@ The `--limit` flag prevents long runs; use `--limit 0` to enrich all pending row
 
 ## Database Backup
 
-The staging database (`staging`) is included in regular backups via `backup_db_to_r2`. Verify that:
-1. The backup script iterates all databases (not just `DB_NAME`)
-2. If it dumps only `DB_NAME`, add `staging` as a required follow-up
+**Not covered.** The `backup_db_to_r2` script dumps only `$DB_NAME` and does not include the `staging` database. Backing up the `staging` database is a **required follow-up**, as review decisions cannot be re-crawled and must be preserved.
 
-**Current status:** TODO — verify backup covers staging database.
+To back up the staging database manually:
+```bash
+pg_dump -U staging postgresql://staging:<password>@<host>/staging > staging_backup.sql
+```
 
 ## Monitoring
 

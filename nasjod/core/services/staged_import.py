@@ -23,16 +23,16 @@ NEAR_M = 100
 NAME_SEARCH_M = 1000
 NAME_THRESHOLD = 0.9
 
-# Map mawaqit-api response keys to Masjid boolean fields
+# Map mawaqit-api response camelCase keys to Masjid boolean fields
 DETAILS_FIELD_MAP = {
     'parking': 'parking',
-    'disabled_access': 'disabled_access',
-    'ablution_room': 'ablution_room',
-    'women_space': 'woman_space',
-    'adult_courses': 'adult_courses',
-    'children_courses': 'children_courses',
-    'salat_al_eid': 'salat_al_eid',
-    'salat_al_janaza': 'salat_al_janaza',
+    'handicapAccessibility': 'disabled_access',
+    'ablutions': 'ablution_room',
+    'womenSpace': 'woman_space',
+    'adultCourses': 'adult_courses',
+    'childrenCourses': 'children_courses',
+    'aidPrayer': 'salat_al_eid',
+    'janazaPrayer': 'salat_al_janaza',
 }
 
 
@@ -105,18 +105,19 @@ def _apply_details(masjid, details):
         if value is not None:
             setattr(masjid, model_field, bool(value))
 
-    if 'telephone' in details and details['telephone'] and not masjid.telephone:
-        phone = str(details['telephone']).strip()
+    if 'phone' in details and details['phone'] and not masjid.telephone:
+        phone = str(details['phone']).strip()
         if phone:
             masjid.telephone = phone[:20]
 
 
-def import_staged_mosques(dry_run=False, slug_filter=None, staging_url=None):
+def import_staged_mosques(dry_run=False, slug_filter=None, ids=None, staging_url=None):
     """Import approved staged mosques into main DB.
 
     Args:
         dry_run: if True, don't modify anything
-        slug_filter: if set, only import these slugs
+        slug_filter: (deprecated) if set, only import these slugs
+        ids: if set, only import these row ids
         staging_url: STAGING_DATABASE_URL (defaults to env var)
 
     Returns:
@@ -134,7 +135,10 @@ def import_staged_mosques(dry_run=False, slug_filter=None, staging_url=None):
         query = "SELECT * FROM staged_mosque WHERE status = %s"
         params = ['approved']
 
-        if slug_filter:
+        if ids:
+            query += " AND id = ANY(%s)"
+            params.append(ids)
+        elif slug_filter:
             query += " AND source_id = ANY(%s)"
             params.append(slug_filter)
 

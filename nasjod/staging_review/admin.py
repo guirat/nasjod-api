@@ -10,11 +10,17 @@ log = logging.getLogger(__name__)
 
 
 def _can_transition(current_status, new_status):
-    """Check if status transition is allowed."""
+    """Check if status transition is allowed.
+
+    Transitions:
+    - new → approved | rejected
+    - duplicate → approved | rejected
+    - rejected → new (undo rejection)
+    - approved/imported/duplicate: no transitions via admin (only via import service)
+    """
     allowed_transitions = {
         'new': ['approved', 'rejected'],
         'duplicate': ['approved', 'rejected'],
-        'approved': ['rejected'],  # Can undo to rejected (implicit from rejected → new)
         'rejected': ['new'],
     }
     return new_status in allowed_transitions.get(current_status, [])
@@ -68,6 +74,30 @@ def reject_rows(modeladmin, request, queryset):
 reject_rows.short_description = "Reject selected rows"
 
 
+def undo_rejection(modeladmin, request, queryset):
+    """Undo rejection: move rejected rows back to new status."""
+    now = timezone.now()
+    rows = list(queryset.using('staging'))
+    updated = 0
+    skipped = 0
+
+    for row in rows:
+        if _can_transition(row.status, 'new'):
+            row.status = 'new'
+            row.reviewed_by_id = None
+            row.reviewed_by_username = None
+            row.reviewed_at = None
+            row.save(using='staging')
+            updated += 1
+        else:
+            skipped += 1
+
+    modeladmin.message_user(request, f"Undid rejection for {updated} rows" + (f" ({skipped} skipped)" if skipped else ""))
+
+
+undo_rejection.short_description = "Undo rejection (move to new)"
+
+
 def import_approved(modeladmin, request, queryset):
     """Import selected approved rows into main DB."""
     from core.services.staged_import import import_staged_mosques
@@ -78,8 +108,8 @@ def import_approved(modeladmin, request, queryset):
         return
 
     try:
-        slugs = [row.source_id for row in approved]
-        imported, skipped, errors = import_staged_mosques(dry_run=False, slug_filter=slugs)
+        ids = [row.id for row in approved]
+        imported, skipped, errors = import_staged_mosques(dry_run=False, ids=ids)
         msg = f"Imported {imported}"
         if skipped:
             msg += f", {skipped} skipped"
@@ -138,7 +168,7 @@ class StagedMosqueAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
-    actions = [approve_rows, reject_rows, import_approved]
+    actions = [approve_rows, reject_rows, undo_rejection, import_approved]
 
     def enriched_flag(self, obj):
         if obj.enriched_at:
