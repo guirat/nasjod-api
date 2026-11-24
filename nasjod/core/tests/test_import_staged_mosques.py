@@ -116,7 +116,7 @@ def test_apply_details_mapping():
     masjid = Masjid.objects.create(name='Test', address=addr)
 
     import json, os
-    fixture = os.path.join(os.path.dirname(__file__), '..', 'fixtures', 'mawaqit_api_sample.json')
+    fixture = os.path.join(os.path.dirname(__file__), '..', 'fixtures', 'mawaqit_api_sample.synthetic.json')
     with open(fixture) as f:
         details = json.load(f)
 
