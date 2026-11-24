@@ -1,103 +1,151 @@
-# GUI-22: Mosque Discovery Staging Database Operations
+# GUI-22: Mosque Discovery Service - Operations Guide
 
-## Setup (one-time, as postgres superuser)
+## Overview
 
-Create a separate role and database for staging on the existing Postgres server:
+The mosque discovery service (`nasjod-discovery` image) discovers and enriches mosque data from Mawaqit, staging it for human review in a separate PostgreSQL database before importing into the main Masjid table.
+
+**Key principle:** All discovery data is temporary and read-only until a human approves it in the Django admin.
+
+## One-Time Setup
+
+### 1. Create the Staging Database and Role
+
+Run these commands as a superuser on the main PostgreSQL server:
 
 ```sql
--- Create staging role (not a superuser, only for staging DB access)
-CREATE ROLE staging LOGIN PASSWORD 'password-here';
+-- Create staging role (non-superuser, read-write only to staging DB)
+CREATE ROLE staging LOGIN PASSWORD '<strong_password>';
 
--- Create staging database owned by staging role
+-- Create staging database
 CREATE DATABASE staging OWNER staging;
 
--- Connect to staging database and enable PostGIS
+-- Connect to staging DB and add PostGIS
 \c staging
 CREATE EXTENSION postgis;
 
--- Restrict staging role to only the staging database
--- (revoke connection to other databases, including main)
-REVOKE CONNECT ON DATABASE postgres FROM staging;
-REVOKE CONNECT ON DATABASE template0 FROM staging;
-REVOKE CONNECT ON DATABASE template1 FROM staging;
--- If there is a main database, also revoke:
--- REVOKE CONNECT ON DATABASE <main_db_name> FROM staging;
-
--- Verify: staging role should only be able to connect to staging DB
+-- Restrict staging role to this DB only
+REVOKE CONNECT ON DATABASE <main_db_name> FROM PUBLIC;
+GRANT CONNECT ON DATABASE <main_db_name> TO <app_role>;
 ```
 
-## Connection string
-
-Set `STAGING_DATABASE_URL` in environment for discovery and app containers:
-
-```
-postgresql://staging:password@db:5432/staging
+Verification: As the `staging` user, verify you cannot connect to the main DB:
+```bash
+psql postgresql://staging:<password>@localhost/<main_db_name>
+# Should fail: permission denied
 ```
 
-Where `db` is the hostname of the main Postgres server (e.g., `db` in docker-compose, 
-or IP/FQDN in production).
+### 2. Set Environment Variables
 
-## Discovery service
-
-The discovery container:
-- Connects only via `STAGING_DATABASE_URL` (never to main DB)
-- Runs migrations on startup (or when `python -m discovery migrate` is called)
-- Crawls new data with `python -m discovery crawl`
-- Enriches data with `python -m discovery enrich` (requires mawaqit-api running)
-- Has `restart: "no"` policy (run via Coolify scheduled tasks or manual invocation)
-
-## Coolify scheduled tasks
-
-Schedule both crawl and enrich to run regularly:
-
-1. **Crawl** (e.g., weekly):
-   ```
-   docker compose run --rm discovery python -m discovery crawl
-   ```
-
-2. **Enrich** (e.g., daily, after crawl):
-   ```
-   docker compose run --rm discovery python -m discovery enrich
-   ```
-
-## Backup
-
-The staging database is a separate Postgres database on the same server as the main DB.
-
-**Verify that your backup strategy covers the `staging` database** (e.g., `backup_db_to_r2`).
-
-If your backup script dumps only the main DB by name, add the `staging` database to the backup:
+The app and discovery containers need:
 
 ```bash
-# Example: add to backup script
-pg_dump postgresql://staging:password@localhost/staging | gzip > backup_staging_$(date +%s).sql.gz
+# Required on discovery container
+STAGING_DATABASE_URL=postgresql://staging:<password>@postgres:5432/staging
+MAWAQIT_API_TOKEN=<token>
+MAWAQIT_API_URL=http://mawaqit_api  # Port 80, no public port exposed
+
+# Optional on discovery
+GOOGLE_PLACES_API_KEY=<key>  # Only if using Google Places adapter
+
+# App container can optionally connect to staging (for the admin review UI)
+STAGING_DATABASE_URL=postgresql://staging:<password>@postgres:5432/staging
 ```
+
+### 3. Configure Coolify Scheduled Tasks
+
+The discovery service runs on demand via Coolify scheduled tasks. Set up two tasks:
+
+**Task 1: Crawl**
+- Image: `nasjod-discovery:latest`
+- Command: `python -m discovery crawl`
+- Schedule: Daily at 2 AM UTC (or as needed)
+- Environment: inherit from deployment
+
+**Task 2: Enrich**
+- Image: `nasjod-discovery:latest`
+- Command: `python -m discovery enrich --limit 100`
+- Schedule: Daily at 3 AM UTC (after crawl, with time to spare)
+- Environment: inherit from deployment
+
+The `--limit` flag prevents long runs; use `--limit 0` to enrich all pending rows.
+
+## Database Backup
+
+The staging database (`staging`) is included in regular backups via `backup_db_to_r2`. Verify that:
+1. The backup script iterates all databases (not just `DB_NAME`)
+2. If it dumps only `DB_NAME`, add `staging` as a required follow-up
+
+**Current status:** TODO — verify backup covers staging database.
 
 ## Monitoring
 
-Check staging DB size and row counts:
-
-```sql
--- Size of staging DB
-SELECT pg_size_pretty(pg_database_size('staging'));
-
--- Row counts
-SELECT status, COUNT(*) FROM staged_mosque GROUP BY status;
-
--- Recently enriched rows
-SELECT source_id, enriched_at, enrich_error FROM staged_mosque 
-WHERE enriched_at > now() - interval '1 day' 
-ORDER BY enriched_at DESC;
-
--- Failed enrichments
-SELECT source_id, enrich_error, COUNT(*) FROM staged_mosque 
-WHERE enrich_error IS NOT NULL 
-GROUP BY source_id, enrich_error;
+### Check Staging DB Size
+```bash
+psql -U staging -h <host> -d staging -c "SELECT pg_size_pretty(pg_database_size('staging'))"
 ```
 
-## Security notes
+### View Pending Rows
+```bash
+psql -U staging -h <host> -d staging -c "
+SELECT status, COUNT(*) as count FROM staged_mosque GROUP BY status
+"
+```
 
-- The `staging` role cannot connect to the main DB (REVOKE applied)
-- Main DB credentials are never sent to discovery container
-- mawaqit-api token is not sent to discovery until `enrich` command runs
-- Discovery container can be isolated on a different network if needed
+### View Recent Errors
+```bash
+psql -U staging -h <host> -d staging -c "
+SELECT source_id, enrich_error, enriched_at FROM staged_mosque 
+WHERE enrich_error IS NOT NULL 
+ORDER BY enriched_at DESC LIMIT 20
+"
+```
+
+## Troubleshooting
+
+### Discovery container won't start: "STAGING_DATABASE_URL is required"
+Ensure the environment variable is set and the database exists.
+
+### Enrich exits with error: "Cannot reach mawaqit-api"
+- Verify mawaqit-api service is running: `docker ps | grep mawaqit_api`
+- Check logs: `docker logs <container_id>`
+- Verify MAWAQIT_API_TOKEN is set and correct
+- Enrich will retry on the next scheduled run; no manual intervention needed
+
+### Admin shows no staged mosques
+- Verify STAGING_DATABASE_URL is set on the app container
+- Check Django logs for database routing errors
+- Ensure the user has the `staging_review.review_stagedmosque` permission
+
+### Staging data is too old
+Run the crawl task manually:
+```bash
+docker run --rm --env-file envs/discovery.env nasjod-discovery:latest \
+  python -m discovery crawl
+```
+
+## Kill Switch
+
+If Mawaqit objects to the discovery service, stop the scheduled tasks in Coolify and the data collection stops. Reviewed rows already in staging are unaffected; nothing has been published to the main Masjid table without explicit human approval.
+
+## SQL Commands
+
+### Full reset (dangerous: deletes all staging data)
+```bash
+psql -U staging -h <host> -d staging -c "TRUNCATE staged_mosque RESTART IDENTITY"
+```
+
+### Mark all rows as imported (skip review)
+```bash
+psql -U staging -h <host> -d staging -c "
+UPDATE staged_mosque SET status='imported' WHERE status='approved'
+"
+```
+
+### Undo a bad import
+```bash
+psql -U staging -h <host> -d staging -c "
+UPDATE staged_mosque SET status='approved', matched_masjid_id=NULL 
+WHERE source_id='<slug>' AND status='imported'
+"
+# Then delete the Masjid row from the main DB
+```
