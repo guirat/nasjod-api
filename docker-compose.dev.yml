@@ -35,12 +35,14 @@ services:
       - redis_data:/data
 
   mawaqit_api:
-    # Build from pinned commit of mrsofiane/mawaqit-api (SHA to be verified)
+    # Build from pinned commit of mrsofiane/mawaqit-api
     build:
-      context: https://github.com/mrsofiane/mawaqit-api.git#main
+      context: https://github.com/mrsofiane/mawaqit-api.git#d173a5a5bf543d90777eff06d872819839b83681
     environment:
-      MAWAQIT_API_TOKEN: ${MAWAQIT_API_TOKEN:-}
-      REDIS_URL: redis://redis:6379/0
+      ENABLE_AUTH: "true"
+      BEARER_TOKEN: ${MAWAQIT_API_TOKEN:?MAWAQIT_API_TOKEN is required}
+      ENABLE_REDIS: "true"
+      REDIS_URI: redis://redis:6379
     depends_on:
       - redis
     restart: unless-stopped
@@ -50,11 +52,10 @@ services:
     depends_on:
       - mawaqit_api
     environment:
-      STAGING_DATABASE_URL: ${STAGING_DATABASE_URL}
+      STAGING_DATABASE_URL: ${STAGING_DATABASE_URL:?STAGING_DATABASE_URL is required}
       GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
-      MAWAQIT_API_URL: http://mawaqit_api:8000
-      MAWAQIT_API_TOKEN: ${MAWAQIT_API_TOKEN:-}
-      CRAWL_INTERVAL_HOURS: ${CRAWL_INTERVAL_HOURS:-168}
+      MAWAQIT_API_URL: http://mawaqit_api
+      MAWAQIT_API_TOKEN: ${MAWAQIT_API_TOKEN:?MAWAQIT_API_TOKEN is required}
     restart: "no"
 
 volumes:
