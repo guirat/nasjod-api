@@ -126,6 +126,9 @@ if _staging_db_url:
         'HOST': parsed.hostname,
         'PORT': str(parsed.port) if parsed.port else '',
         'CONN_MAX_AGE': 0,
+        # Tests clone the already-provisioned staging DB (extension + schema),
+        # so the non-superuser staging role never has to CREATE EXTENSION.
+        'TEST': {'TEMPLATE': parsed.path.lstrip('/')},
     }
 
 DATABASE_ROUTERS = ['core.db_routers.StagingRouter']
