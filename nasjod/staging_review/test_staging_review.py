@@ -1,9 +1,18 @@
+import os
+import pytest
 from django.test import TestCase, TransactionTestCase
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import connections
 from django.contrib.admin.sites import AdminSite
 from staging_review.models import StagedMosque
 from staging_review.admin import StagedMosqueAdmin
+
+
+pytestmark = pytest.mark.skipif(
+    'staging' not in settings.DATABASES,
+    reason="STAGING_DATABASE_URL not configured"
+)
 
 
 class StagedMosqueAdminTest(TransactionTestCase):
