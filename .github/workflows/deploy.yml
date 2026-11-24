@@ -140,18 +140,58 @@ jobs:
           if [ -z "$COOLIFY_TOKEN" ] || [ -z "$COOLIFY_WEBHOOK" ]; then
             echo "COOLIFY_TOKEN or COOLIFY_WEBHOOK is not set for this environment"; exit 1
           fi
-          # Print HTTP status and Coolify's JSON response (no secrets in it) so failures are diagnosable.
-          code=$(curl --silent --show-error \
-            --proto '=https' --proto-redir '=https' \
-            --connect-timeout 15 --max-time 60 --retry 2 --retry-connrefused \
-            --request POST --output /tmp/coolify.out --write-out '%{http_code}' \
-            --header "Authorization: Bearer $COOLIFY_TOKEN" \
-            --header "Accept: application/json" \
-            "$COOLIFY_WEBHOOK")
-          echo "Coolify HTTP status: $code"
-          head -c 500 /tmp/coolify.out; echo
-          case "$code" in 2??) ;; *) exit 1 ;; esac
-          echo "Coolify redeploy accepted"
+          api_base="${COOLIFY_WEBHOOK%%/api/*}"
+
+          call() { # METHOD URL -> body in /tmp/coolify.out, prints HTTP status
+            curl --silent --show-error \
+              --proto '=https' --proto-redir '=https' \
+              --connect-timeout 15 --max-time 60 --retry 2 --retry-connrefused \
+              --request "$1" --output /tmp/coolify.out --write-out '%{http_code}' \
+              --header "Authorization: Bearer $COOLIFY_TOKEN" \
+              --header "Accept: application/json" \
+              "$2"
+          }
+
+          # Coolify answers 200 "Deployment already queued for this commit." and does NOT start a
+          # new deployment while one is queued/running for the resource. A rollback or a quick
+          # second push would then be swallowed, so we wait for the in-flight one and re-trigger.
+          trigger() {
+            code=$(call POST "$COOLIFY_WEBHOOK")
+            echo "Coolify HTTP status: $code"
+            head -c 500 /tmp/coolify.out; echo
+            case "$code" in 2??) ;; *) exit 1 ;; esac
+            dep_uuid=$(jq -r '.deployments[0].deployment_uuid // empty' /tmp/coolify.out)
+            dep_msg=$(jq -r '.deployments[0].message // empty' /tmp/coolify.out)
+          }
+
+          # Poll the deployment until it settles. Prints the final status and the log lines that
+          # name the image. Returns 2 if the status cannot be read (token without read scope).
+          wait_deploy() {
+            for _ in $(seq 1 60); do
+              c=$(call GET "$api_base/api/v1/deployments/$1")
+              if [ "$c" != "200" ]; then echo "::warning::cannot read deployment $1 (HTTP $c)"; return 2; fi
+              status=$(jq -r '.status // empty' /tmp/coolify.out)
+              echo "deployment $1 status: $status"
+              case "$status" in
+                finished) jq -r '.logs // empty' /tmp/coolify.out | grep -iE 'image|digest|pull' | head -20 || true; return 0 ;;
+                failed|cancelled*|error) return 1 ;;
+              esac
+              sleep 10
+            done
+            echo "Timed out waiting for deployment $1"; return 1
+          }
+
+          trigger
+          if printf '%s' "$dep_msg" | grep -qi 'already queued'; then
+            echo "A deployment was already in flight ($dep_uuid); waiting for it, then re-triggering so the current image tag is pulled."
+            wait_deploy "$dep_uuid" || [ $? -eq 2 ] || true
+            trigger
+            if printf '%s' "$dep_msg" | grep -qi 'already queued'; then
+              echo "Still deduplicated after waiting; failing so this is not reported as a successful deploy."; exit 1
+            fi
+          fi
+          wait_deploy "$dep_uuid" || [ $? -eq 2 ]
+          echo "Coolify redeploy finished (deployment $dep_uuid)"
 
       - name: Summary
         env:
