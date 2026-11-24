@@ -27,14 +27,14 @@ def enrich(conn, limit=None, delay=2, max_age_days=30, slug=None):
         slug: if set, enrich only this specific slug
 
     Returns:
-        0 if mawaqit-api was reachable or skipped, 1 if unreachable
+        0 if mawaqit-api was reachable, 1 if unreachable or error
     """
     api_url = os.environ.get("MAWAQIT_API_URL")
     api_token = os.environ.get("MAWAQIT_API_TOKEN")
 
     if not api_url:
-        log.warning("MAWAQIT_API_URL not set; skipping enrich")
-        return 0
+        log.error("MAWAQIT_API_URL not set")
+        return 1
 
     if not api_token:
         log.error("MAWAQIT_API_TOKEN required for enrich")
@@ -73,43 +73,73 @@ def enrich(conn, limit=None, delay=2, max_age_days=30, slug=None):
     log.info("Enriching %d rows", len(rows))
     session = requests.Session()
     headers = {"User-Agent": USER_AGENT, "Authorization": f"Bearer {api_token}"}
-    exit_code = 0
 
     for row in rows:
         row_id = row["id"]
         row_slug = row["source_id"]
         endpoint = f"{api_url}/api/v1/{row_slug}/"
 
-        try:
-            resp = session.get(endpoint, headers=headers, timeout=30)
+        for attempt in range(1, 4):
+            try:
+                resp = session.get(endpoint, headers=headers, timeout=30)
 
-            if resp.status_code == 200:
-                details = resp.json()
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """UPDATE staged_mosque SET details=%s, enriched_at=now(), enrich_error=NULL
-                           WHERE id=%s""",
-                        (json.dumps(details), row_id)
-                    )
-                conn.commit()
-                log.debug("Enriched %s", row_slug)
+                if resp.status_code == 200:
+                    details = resp.json()
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """UPDATE staged_mosque SET details=%s, enriched_at=now(), enrich_error=NULL
+                               WHERE id=%s""",
+                            (json.dumps(details), row_id)
+                        )
+                    conn.commit()
+                    log.debug("Enriched %s", row_slug)
+                    break
 
-            elif resp.status_code == 404:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """UPDATE staged_mosque SET enrich_error='not_found', enriched_at=now()
-                           WHERE id=%s""",
-                        (row_id,)
-                    )
-                conn.commit()
-                log.debug("Not found: %s", row_slug)
+                elif resp.status_code == 404:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """UPDATE staged_mosque SET enrich_error='not_found', enriched_at=now()
+                               WHERE id=%s""",
+                            (row_id,)
+                        )
+                    conn.commit()
+                    log.debug("Not found: %s", row_slug)
+                    break
 
-            elif resp.status_code in (429, 500, 502, 503, 504):
-                log.warning("API error %d for %s; will retry later", resp.status_code, row_slug)
-                # Don't update enriched_at; retry on next run
+                elif resp.status_code in (429, 500, 502, 503, 504):
+                    if attempt < 3:
+                        log.debug("API error %d for %s (attempt %d/3), retrying...", resp.status_code, row_slug, attempt)
+                        time.sleep(5 * attempt)
+                        continue
+                    msg = f"HTTP {resp.status_code}"
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """UPDATE staged_mosque SET enrich_error=%s, enriched_at=now()
+                               WHERE id=%s""",
+                            (msg, row_id)
+                        )
+                    conn.commit()
+                    log.warning("API error %s for %s after retries", msg, row_slug)
+                    break
 
-            else:
-                msg = f"HTTP {resp.status_code}"
+                else:
+                    msg = f"HTTP {resp.status_code}"
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """UPDATE staged_mosque SET enrich_error=%s, enriched_at=now()
+                               WHERE id=%s""",
+                            (msg, row_id)
+                        )
+                    conn.commit()
+                    log.warning("API error %s for %s", msg, row_slug)
+                    break
+
+            except requests.Timeout:
+                if attempt < 3:
+                    log.debug("Timeout enriching %s (attempt %d/3), retrying...", row_slug, attempt)
+                    time.sleep(5 * attempt)
+                    continue
+                msg = "timeout"
                 with conn.cursor() as cur:
                     cur.execute(
                         """UPDATE staged_mosque SET enrich_error=%s, enriched_at=now()
@@ -117,23 +147,25 @@ def enrich(conn, limit=None, delay=2, max_age_days=30, slug=None):
                         (msg, row_id)
                     )
                 conn.commit()
-                log.warning("API error %s for %s", msg, row_slug)
+                log.warning("Timeout enriching %s after retries", row_slug)
 
-        except requests.Timeout:
-            log.warning("Timeout enriching %s; will retry later", row_slug)
+            except requests.ConnectionError as e:
+                log.error("Cannot reach mawaqit-api: %s", e)
+                return 1
 
-        except Exception as e:
-            msg = str(e)[:100]
-            with conn.cursor() as cur:
-                cur.execute(
-                    """UPDATE staged_mosque SET enrich_error=%s, enriched_at=now()
-                       WHERE id=%s""",
-                    (msg, row_id)
-                )
-            conn.commit()
-            log.warning("Error enriching %s: %s", row_slug, e)
+            except Exception as e:
+                msg = str(e)[:100]
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """UPDATE staged_mosque SET enrich_error=%s, enriched_at=now()
+                           WHERE id=%s""",
+                        (msg, row_id)
+                    )
+                conn.commit()
+                log.warning("Error enriching %s: %s", row_slug, e)
+                break
 
         time.sleep(delay)
 
     log.info("Enrichment complete")
-    return exit_code
+    return 0
