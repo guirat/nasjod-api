@@ -27,20 +27,25 @@ class StagedMosqueAdminTest(TransactionTestCase):
         self.site = AdminSite()
         self.admin = StagedMosqueAdmin(StagedMosque, self.site)
 
-        # Create a test row in staging DB
+        # Create a test row in staging DB (unmanaged table: not flushed by the test runner)
         with connections['staging'].cursor() as cursor:
+            cursor.execute("DELETE FROM staged_mosque")
             cursor.execute("""
                 INSERT INTO staged_mosque
                 (source, source_id, name, lat, lon, raw, status, first_seen, last_seen)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, now(), now())
             """, ('mawaqit', 'test-slug', 'Test Mosque', 35.0, 10.0, '{}', 'new'))
 
+    def tearDown(self):
+        with connections['staging'].cursor() as cursor:
+            cursor.execute("DELETE FROM staged_mosque")
+
     def test_approve_action(self):
         """Test that approve action changes status."""
         rows = StagedMosque.objects.using('staging').filter(source_id='test-slug')
         self.assertEqual(rows.count(), 1)
 
-        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.contrib.messages.storage.cookie import CookieStorage as FallbackStorage
         from django.test import RequestFactory
 
         factory = RequestFactory()
@@ -58,7 +63,7 @@ class StagedMosqueAdminTest(TransactionTestCase):
 
     def test_reject_action(self):
         """Test that reject action changes status."""
-        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.contrib.messages.storage.cookie import CookieStorage as FallbackStorage
         from django.test import RequestFactory
 
         factory = RequestFactory()
