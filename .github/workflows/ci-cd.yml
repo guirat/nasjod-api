@@ -24,7 +24,9 @@ jobs:
           persist-credentials: false
 
       - name: Install semver
-        run: pip install semver
+        run: |
+          echo 'semver==3.1.2 --hash=sha256:45d107c3fa880910441dfab9d555046cba2829a25feeadfe4a1566439635c510' > "$RUNNER_TEMP/req.txt"
+          pip install --require-hashes -r "$RUNNER_TEMP/req.txt"
 
       - name: Compute next version from latest tag
         id: version

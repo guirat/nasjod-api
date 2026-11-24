@@ -55,6 +55,7 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
+        if: github.event_name == 'push'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
@@ -78,29 +79,11 @@ jobs:
           context: .
           file: Dockerfile
           push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ steps.vars.outputs.env_tag }}
-            ${{ env.IMAGE }}:${{ github.sha }}
-            ${{ github.ref_name == 'main' && format('{0}:latest', env.IMAGE) || '' }}
+          # Immutable tag only. Moving tags (staging/prod/latest) are set in the gated deploy job.
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-
-      - name: Rollback - re-tag existing SHA image as environment tag
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          SHA: ${{ steps.vars.outputs.sha }}
-          ENV_TAG: ${{ steps.vars.outputs.env_tag }}
-        run: |
-          docker buildx imagetools create \
-            --tag "$IMAGE:$ENV_TAG" \
-            "$IMAGE:$SHA"
-          # latest always mirrors production (main)
-          if [ "$ENV_TAG" = "prod" ]; then
-            docker buildx imagetools create \
-              --tag "$IMAGE:latest" \
-              "$IMAGE:$SHA"
-          fi
 
   deploy:
     needs: image
@@ -111,7 +94,28 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
+      packages: write
     steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Runs only after the environment gate. Fails if the :<sha> image does not exist.
+      # Also serves as the rollback re-tag (workflow_dispatch), no rebuild.
+      - name: Move environment tags to the image
+        env:
+          SHA: ${{ needs.image.outputs.sha }}
+          ENV_TAG: ${{ needs.image.outputs.env_tag }}
+        run: |
+          docker buildx imagetools create --tag "$IMAGE:$ENV_TAG" "$IMAGE:$SHA"
+          # latest always mirrors production (main)
+          if [ "$ENV_TAG" = "prod" ]; then
+            docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:$SHA"
+          fi
+
       - name: Trigger Coolify redeploy
         env:
           COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
@@ -122,6 +126,7 @@ jobs:
           fi
           # Print HTTP status and Coolify's JSON response (no secrets in it) so failures are diagnosable.
           code=$(curl --silent --show-error \
+            --proto '=https' --proto-redir '=https' \
             --connect-timeout 15 --max-time 60 --retry 2 --retry-connrefused \
             --request POST --output /tmp/coolify.out --write-out '%{http_code}' \
             --header "Authorization: Bearer $COOLIFY_TOKEN" \
