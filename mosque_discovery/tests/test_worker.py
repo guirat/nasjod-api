@@ -23,7 +23,7 @@ pytestmark_db = pytest.mark.skipif(not url, reason="STAGING_TEST_DATABASE_URL no
 
 @pytest.fixture
 def db_conn():
-    """Provide a test database connection."""
+    """Provide a test database connection with clean slate."""
     if not url:
         return None
     c = store.connect(url)
@@ -31,12 +31,14 @@ def db_conn():
         cur.execute("DROP TABLE IF EXISTS schema_migrations CASCADE")
         cur.execute("DROP TABLE IF EXISTS staged_mosque CASCADE")
     c.commit()
-    store.init_schema(c)
     yield c
     with c.cursor() as cur:
         cur.execute("DROP TABLE IF EXISTS schema_migrations CASCADE")
         cur.execute("DROP TABLE IF EXISTS staged_mosque CASCADE")
-    c.commit()
+    try:
+        c.commit()
+    except Exception:
+        c.rollback()
     c.close()
 
 
@@ -122,20 +124,19 @@ class TestMigrations:
             assert cur.fetchone() is not None
 
         # Revert: read and execute the down migration
-        down_path = Path(__file__).parent.parent / "mosque_discovery" / "migrations" / "0002_review_and_enrichment.down.sql"
-        if not down_path.exists():
-            down_path = Path(__file__).parent.parent / "migrations" / "0002_review_and_enrichment.down.sql"
+        down_path = Path(__file__).parent.parent / "migrations" / "0002_review_and_enrichment.down.sql"
 
-        if down_path.exists():
-            with open(down_path) as f:
-                down_sql = f.read()
-            with db_conn.cursor() as cur:
-                cur.execute(down_sql)
-            db_conn.commit()
+        assert down_path.exists(), f"Down migration not found at {down_path}"
 
-            with db_conn.cursor() as cur:
-                cur.execute("SELECT version FROM schema_migrations WHERE version='0002_review_and_enrichment'")
-                assert cur.fetchone() is None
+        with open(down_path) as f:
+            down_sql = f.read()
+        with db_conn.cursor() as cur:
+            cur.execute(down_sql)
+        db_conn.commit()
+
+        with db_conn.cursor() as cur:
+            cur.execute("SELECT version FROM schema_migrations WHERE version='0002_review_and_enrichment'")
+            assert cur.fetchone() is None
 
 
 # T2: Source selection
@@ -276,6 +277,8 @@ class TestEnrich:
         """T4 AC: enrich success stores details and enriched_at."""
         caplog.set_level(logging.DEBUG)
 
+        store.migrate(db_conn)
+
         c = Candidate("mawaqit", "jm-test", "Test Mosque", 36.5, 10.0)
         store.upsert_candidates(db_conn, [c])
 
@@ -318,6 +321,8 @@ class TestEnrich:
     @pytest.mark.skipif(not url, reason="STAGING_TEST_DATABASE_URL not set")
     def test_enrich_404(self, db_conn, monkeypatch):
         """T4 AC: 404 sets enrich_error='not_found', continues."""
+        store.migrate(db_conn)
+
         c = Candidate("mawaqit", "jm-404", "Not Found", 36.5, 10.0)
         store.upsert_candidates(db_conn, [c])
 
@@ -342,6 +347,8 @@ class TestEnrich:
     @pytest.mark.skipif(not url, reason="STAGING_TEST_DATABASE_URL not set")
     def test_enrich_5xx_then_success(self, db_conn, monkeypatch):
         """T4 AC: 503-then-200 retries and succeeds after 2 calls."""
+        store.migrate(db_conn)
+
         c = Candidate("mawaqit", "jm-retry", "Retry", 36.5, 10.0)
         store.upsert_candidates(db_conn, [c])
 
@@ -373,6 +380,8 @@ class TestEnrich:
     @pytest.mark.skipif(not url, reason="STAGING_TEST_DATABASE_URL not set")
     def test_enrich_timeout(self, db_conn, monkeypatch):
         """T4 AC: timeout sets enrich_error='timeout', continues."""
+        store.migrate(db_conn)
+
         c = Candidate("mawaqit", "jm-timeout", "Timeout", 36.5, 10.0)
         store.upsert_candidates(db_conn, [c])
 
@@ -395,21 +404,38 @@ class TestEnrich:
 
         conn = store.connect(url)
 
-        with patch("requests.Session.get") as mock_get:
-            mock_get.side_effect = Exception("ConnectionError")
+        try:
+            # Clean up and initialize
+            with conn.cursor() as cur:
+                cur.execute("DROP TABLE IF EXISTS schema_migrations CASCADE")
+                cur.execute("DROP TABLE IF EXISTS staged_mosque CASCADE")
+            conn.commit()
+            store.migrate(conn)
 
-            monkeypatch.setenv("MAWAQIT_API_URL", "http://mawaqit-api")
-            monkeypatch.setenv("MAWAQIT_API_TOKEN", "test-token")
+            with patch("requests.Session.get") as mock_get:
+                mock_get.side_effect = Exception("ConnectionError")
 
-            # With no rows, enrich returns 0
-            result = enrich(conn, limit=0)
-            assert result == 0
+                monkeypatch.setenv("MAWAQIT_API_URL", "http://mawaqit-api")
+                monkeypatch.setenv("MAWAQIT_API_TOKEN", "test-token")
 
-        conn.close()
+                # With no rows, enrich returns 0; with unreachable API, it should return 1
+                result = enrich(conn, limit=0)
+                assert result == 0
+        finally:
+            with conn.cursor() as cur:
+                cur.execute("DROP TABLE IF EXISTS schema_migrations CASCADE")
+                cur.execute("DROP TABLE IF EXISTS staged_mosque CASCADE")
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+            conn.close()
 
     @pytest.mark.skipif(not url, reason="STAGING_TEST_DATABASE_URL not set")
     def test_enrich_selection_skips_non_new(self, db_conn, monkeypatch):
         """T4 AC: selection skips rejected/imported/duplicate rows, respects limit."""
+        store.migrate(db_conn)
+
         # Create rows with different statuses
         store.upsert_candidates(db_conn, [
             Candidate("mawaqit", "m1", "M1", 36.8, 10.1),
@@ -435,12 +461,14 @@ class TestEnrich:
 
             # Only m3 should be called (m1 rejected, m2 imported)
             assert mock_get.call_count == 1
-            assert mock_get.call_args[0][1].endswith("/api/v1/m3/")
+            assert mock_get.call_args[0][0].endswith("/api/v1/m3/")
 
     @pytest.mark.skipif(not url, reason="STAGING_TEST_DATABASE_URL not set")
     def test_token_not_in_logs(self, db_conn, monkeypatch, caplog):
         """T4 AC: token never appears in logs."""
         caplog.set_level(logging.DEBUG)
+
+        store.migrate(db_conn)
 
         c = Candidate("mawaqit", "jm-log", "Log Test", 36.5, 10.0)
         store.upsert_candidates(db_conn, [c])
